@@ -1,16 +1,60 @@
 # About
 
 ## Build
-- Version: d53e9ab-dirty
-- Commit: d53e9ab (d53e9ab606fc4f41b249b09e74d45ba434295c01)
-- Commit count: 112
-- Subject: feat: 添加图标标签页及相关功能，优化上下文菜单和键绑定
+- Version: a460abd-dirty
+- Commit: a460abd (a460abdaadd5db394e0c3e22ae336f680863e35c)
+- Commit count: 117
+- Subject: feat(plugin): 新增插件系统并重构内置插件模块
 - Author: AndreaFrederica
-- Date: 2026-02-25T04:27:46+08:00
-- Generated at: 2026-03-10T15:44:56.688Z
+- Date: 2026-03-11T06:43:41+08:00
+- Generated at: 2026-03-10T23:19:51.254Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r117 (2026-03-11T06:43:41+08:00)
+- a460abd
+  feat(plugin): 新增插件系统并重构内置插件模块
+  
+  - 新增 keepAlive 选项支持 iframe 标签页保持挂载状态
+  - 新增多个内置插件：协议终端、BilibiliWiki、Iframe 服务示例、外部检索、目录查询、基质规划器
+  - 重构内置插件模块，将插件定义拆分到独立文件
+  - 为 iframe 标签页添加加载状态指示器
+  - 更新插件 API 文档，补充多标签页配置示例
+
+### r116 (2026-03-11T05:36:14+08:00)
+- fe3d2d7
+  feat(plugins): 扩展插件宿主API并添加文档
+  
+  - 新增 HostApiHandler 类型定义，支持插件调用宿主功能
+  - 实现 navigateToItem、toggleBookmark、getItemImage 等宿主API
+  - 在 PluginIframeTab 中注入宿主API处理器并完善错误处理
+  - 添加完整的插件API文档，详细说明通信协议和可用接口
+
+### r115 (2026-03-11T05:05:33+08:00)
+- ab48006
+  feat(plugin): 新增插件系统以支持自定义标签页和外部服务集成
+  
+  - 引入插件管理器 (PluginManager) 和类型定义，支持注册、启用/禁用插件
+  - 为 ItemDialog、CenterPanel 和 RecipeContentView 组件添加对插件标签页的支持
+  - 新增内置插件示例，包括外部搜索、目录 API、iframe 服务和 BilibiliWiki 集成
+  - 扩展设置存储以管理插件启用状态和配置
+  - 添加 PluginIframeTab 组件以安全加载和与插件 iframe 通信
+  - 在设置对话框中集成插件管理和快捷键配置，移除单独的快捷键对话框
+
+### r114 (2026-03-11T02:06:04+08:00)
+- 653ec90
+  feat(pack): 添加资源包镜像路由支持及配方懒加载
+  
+  - 在资源包配置中支持镜像地址列表，提供自动/手动选择模式
+  - 为配方添加 detailPath 和 detailLoaded 字段实现懒加载
+  - 在设置面板中添加镜像路由配置界面，支持延迟测试
+  - 优化 Skland 资源包构建脚本，拆分大配方为轻量版和详情文件
+  - 更新多语言资源文件，添加镜像相关文本
+
+### r113 (2026-03-10T23:55:16+08:00)
+- 90342b1
+  feat: add manual pack cache refresh and force reload support
 
 ### r112 (2026-02-25T04:27:46+08:00)
 - d53e9ab

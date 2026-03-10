@@ -1,10 +1,20 @@
 <template>
   <q-page :class="['jei-page', { 'jei-debug': settingsStore.debugLayout }]">
     <div v-if="error" class="text-negative q-pa-md">{{ error }}</div>
-    <div v-else-if="loading" class="row items-center q-gutter-sm q-pa-md">
-      <q-spinner size="20px" />
-      <div>{{ t('loading') }}</div>
-    </div>
+
+    <jei-loading
+      v-else-if="loading && settingsStore.showLoadingOverlay"
+      overlay
+      :pack-label="currentPackLabel"
+      :progress="loadingProgress"
+      @open-settings="settingsOpen = true"
+    />
+
+    <jei-loading
+      v-else-if="loading && !settingsStore.showLoadingOverlay"
+      :overlay="false"
+      :progress="loadingProgress"
+    />
 
     <div
       v-else
@@ -168,6 +178,8 @@
       @update:debug-layout="settingsStore.setDebugLayout($event)"
       :debug-nav-panel="settingsStore.debugNavPanel"
       @update:debug-nav-panel="settingsStore.setDebugNavPanel($event)"
+      :show-loading-overlay="settingsStore.showLoadingOverlay"
+      @update:show-loading-overlay="settingsStore.setShowLoadingOverlay($event)"
       :recipe-view-mode="settingsStore.recipeViewMode"
       @update:recipe-view-mode="settingsStore.setRecipeViewMode($event)"
       :recipe-slot-show-name="settingsStore.recipeSlotShowName"
@@ -297,6 +309,7 @@ import {
   loadRuntimePack,
   registerPackSource,
   setPackMirrorPreference,
+  type LoadProgress,
 } from 'src/jei/pack/loader';
 import {
   applyImageProxyToPack,
@@ -317,6 +330,7 @@ import SettingsDialog from './components/SettingsDialog.vue';
 import ItemDialog from './components/ItemDialog.vue';
 import ItemContextMenu from './components/ItemContextMenu.vue';
 import DebugPanel from './components/DebugPanel.vue';
+import JeiLoading from 'src/components/JeiLoading.vue';
 import MarkdownIt from 'markdown-it';
 import { pinyin } from 'pinyin-pro';
 import type {
@@ -407,6 +421,7 @@ const applyingRoute = ref(false);
 const syncingUrl = ref(false);
 
 const loading = ref(true);
+const loadingProgress = ref<LoadProgress | null>(null);
 const error = ref('');
 
 const pack = ref<PackData | null>(null);
@@ -452,6 +467,11 @@ async function loadLocalPackOptions(): Promise<PackOption[]> {
 const activePackId = computed({
   get: () => settingsStore.selectedPack,
   set: (v) => settingsStore.setSelectedPack(v),
+});
+
+const currentPackLabel = computed(() => {
+  const opt = packOptions.value.find((o) => o.value === activePackId.value);
+  return opt ? opt.label : activePackId.value;
 });
 
 const selectedKeyHash = ref<string | null>(null);
@@ -1644,6 +1664,7 @@ watch(
 async function reloadPack(packId: string) {
   error.value = '';
   loading.value = true;
+  loadingProgress.value = null;
   try {
     applyMirrorPreference(packId);
     itemDetailLoadTasks.clear();
@@ -1654,7 +1675,9 @@ async function reloadPack(packId: string) {
     historyKeyHashes.value = [];
     runtimePackDispose.value?.();
     runtimePackDispose.value = null;
-    const loaded = await loadRuntimePack(packId);
+    const loaded = await loadRuntimePack(packId, (p) => {
+      loadingProgress.value = p;
+    });
     runtimePackDispose.value = loaded.dispose;
     pack.value = loaded.pack;
 

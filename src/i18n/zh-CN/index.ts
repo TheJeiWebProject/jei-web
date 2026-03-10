@@ -55,6 +55,7 @@ export default {
 
   // Settings
   settings: '设置',
+  showLoadingOverlay: '显示加载遮罩动画',
   historyLimit: '历史记录显示数量',
   debugScroll: '开启调试滚动',
   debugNavPanel: '导航栈调试面板',

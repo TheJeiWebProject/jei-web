@@ -55,6 +55,7 @@ export default {
 
   // Settings
   settings: '設定',
+  showLoadingOverlay: 'ロード画面を表示',
   historyLimit: '履歴表示数',
   debugScroll: 'デバッグスクロールを有効にする',
   debugNavPanel: 'ナビゲーションスタックデバッグパネル',

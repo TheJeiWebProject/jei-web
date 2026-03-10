@@ -84,6 +84,7 @@ export const useSettingsStore = defineStore('settings', {
       customPackSources: [] as Array<{ packId: string; label: string; mirrors: string[] }>,
       packMirrorSelectionModeByPack: {} as Record<string, 'auto' | 'manual'>,
       packManualMirrorByPack: {} as Record<string, string>,
+      showLoadingOverlay: true,
       pluginEnabledById: {} as Record<string, boolean>,
       pluginSettingsById: {} as Record<string, Record<string, string | number | boolean>>,
     };
@@ -239,6 +240,10 @@ export const useSettingsStore = defineStore('settings', {
               ),
             )
             : defaults.packManualMirrorByPack,
+        showLoadingOverlay:
+          typeof parsed.showLoadingOverlay === 'boolean'
+            ? parsed.showLoadingOverlay
+            : defaults.showLoadingOverlay,
         pluginEnabledById:
           parsed.pluginEnabledById && typeof parsed.pluginEnabledById === 'object'
             ? Object.fromEntries(
@@ -433,6 +438,10 @@ export const useSettingsStore = defineStore('settings', {
       };
       void this.save();
     },
+    setShowLoadingOverlay(value: boolean) {
+      this.showLoadingOverlay = value;
+      void this.save();
+    },
     setPluginEnabled(pluginId: string, enabled: boolean) {
       this.pluginEnabledById = {
         ...this.pluginEnabledById,
@@ -485,6 +494,7 @@ export const useSettingsStore = defineStore('settings', {
         customPackSources: this.customPackSources,
         packMirrorSelectionModeByPack: this.packMirrorSelectionModeByPack,
         packManualMirrorByPack: this.packManualMirrorByPack,
+        showLoadingOverlay: this.showLoadingOverlay,
         pluginEnabledById: this.pluginEnabledById,
         pluginSettingsById: this.pluginSettingsById,
       });
@@ -532,6 +542,7 @@ export const useSettingsStore = defineStore('settings', {
       if (typeof parsed.packImageProxyAccessToken === 'string') this.packImageProxyAccessToken = parsed.packImageProxyAccessToken;
       if (typeof parsed.packImageProxyAnonymousToken === 'string') this.packImageProxyAnonymousToken = parsed.packImageProxyAnonymousToken;
       if (typeof parsed.packImageProxyFrameworkToken === 'string') this.packImageProxyFrameworkToken = parsed.packImageProxyFrameworkToken;
+      if (typeof parsed.showLoadingOverlay === 'boolean') this.showLoadingOverlay = parsed.showLoadingOverlay;
       if (typeof parsed.circuitCollectionPreviewShowPieces === 'boolean') this.circuitCollectionPreviewShowPieces = parsed.circuitCollectionPreviewShowPieces;
       if (typeof parsed.circuitEditorPiecePanelSplitRatio === 'number') this.circuitEditorPiecePanelSplitRatio = parsed.circuitEditorPiecePanelSplitRatio;
       if (typeof parsed.detectPcDisableMobile === 'boolean') this.detectPcDisableMobile = parsed.detectPcDisableMobile;

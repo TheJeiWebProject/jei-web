@@ -243,6 +243,11 @@
                       class="full-width"
                       @click="$emit('refresh-pack-cache')"
                     />
+                    <q-toggle
+                      :label="t('showLoadingOverlay')"
+                      :model-value="showLoadingOverlay"
+                      @update:model-value="$emit('update:show-loading-overlay', !!$event)"
+                    />
                   </div>
                 </q-card-section>
               </q-card>
@@ -549,6 +554,7 @@ const props = defineProps<{
   historyLimit: number;
   debugLayout: boolean;
   debugNavPanel: boolean;
+  showLoadingOverlay: boolean;
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
   favoritesOpensNewStack: boolean;
@@ -602,6 +608,7 @@ const emit = defineEmits<{
   'update:history-limit': [value: number];
   'update:debug-layout': [value: boolean];
   'update:debug-nav-panel': [value: boolean];
+  'update:show-loading-overlay': [value: boolean];
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
   'update:recipe-slot-show-name': [value: boolean];
   'update:favorites-open-stack': [value: boolean];

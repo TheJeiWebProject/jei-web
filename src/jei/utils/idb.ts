@@ -1,8 +1,9 @@
 const DB_NAME = 'jei-web';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_ASSETS = 'editor_assets';
 const STORE_PACKS = 'editor_packs';
 const STORE_ICON_CACHE = 'item_icon_cache';
+const STORE_REMOTE_CACHE = 'remote_pack_cache';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -24,6 +25,7 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_ASSETS)) db.createObjectStore(STORE_ASSETS);
       if (!db.objectStoreNames.contains(STORE_PACKS)) db.createObjectStore(STORE_PACKS);
       if (!db.objectStoreNames.contains(STORE_ICON_CACHE)) db.createObjectStore(STORE_ICON_CACHE);
+      if (!db.objectStoreNames.contains(STORE_REMOTE_CACHE)) db.createObjectStore(STORE_REMOTE_CACHE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(toError(req.error));
@@ -161,7 +163,47 @@ export async function idbListIconCache(): Promise<Array<{ key: string; entry: Ic
   }));
 }
 
-export const IDB_STORE_NAMES = [STORE_ASSETS, STORE_PACKS, STORE_ICON_CACHE] as const;
+export interface RemoteCacheEntry {
+  packId: string;
+  version: string;
+  type: 'items' | 'tags' | 'recipeTypes' | 'recipes' | 'itemsLite' | 'itemsIndex' | (string & {});
+  data: unknown;
+  updatedAt: number;
+}
+
+export async function idbGetRemoteCache(packId: string, type: string): Promise<RemoteCacheEntry | undefined> {
+  const key = `${packId}:${type}`;
+  return getFromStore<RemoteCacheEntry>(STORE_REMOTE_CACHE, key);
+}
+
+export async function idbSetRemoteCache(entry: RemoteCacheEntry): Promise<void> {
+  const key = `${entry.packId}:${entry.type}`;
+  await setInStore(STORE_REMOTE_CACHE, key, entry);
+}
+
+export async function idbDeleteRemoteCache(packId: string, type: string): Promise<void> {
+  const key = `${packId}:${type}`;
+  await deleteFromStore(STORE_REMOTE_CACHE, key);
+}
+
+export async function idbClearRemoteCache(packId?: string): Promise<void> {
+  if (packId) {
+    const db = await openDb();
+    const tx = db.transaction(STORE_REMOTE_CACHE, 'readwrite');
+    const store = tx.objectStore(STORE_REMOTE_CACHE);
+    const keys = await reqDone<IDBValidKey[]>(store.getAllKeys());
+    for (const key of keys) {
+      if (typeof key === 'string' && key.startsWith(`${packId}:`)) {
+        store.delete(key);
+      }
+    }
+    await txDone(tx);
+  } else {
+    await idbClearStore(STORE_REMOTE_CACHE);
+  }
+}
+
+export const IDB_STORE_NAMES = [STORE_ASSETS, STORE_PACKS, STORE_ICON_CACHE, STORE_REMOTE_CACHE] as const;
 export type IdbStoreName = (typeof IDB_STORE_NAMES)[number];
 
 export async function idbListStoreEntries(

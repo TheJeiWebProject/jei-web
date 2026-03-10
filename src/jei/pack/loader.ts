@@ -1,6 +1,6 @@
 import type { ItemDef, PackData, PackManifest, PackTags, Recipe, RecipeTypeDef } from 'src/jei/types';
 import { stableJsonStringify } from 'src/jei/utils/stableJson';
-import { idbGetPackZip } from 'src/jei/utils/idb';
+import { idbClearRemoteCache, idbGetPackZip, idbGetRemoteCache, idbSetRemoteCache } from 'src/jei/utils/idb';
 import { assertItemDef, assertPackManifest, assertPackTags, assertRecipe, assertRecipeTypeDef } from './validate';
 import { applyImageProxyToItem, applyImageProxyToPack, ensurePackImageProxyTokens } from './imageProxy';
 import JSZip from 'jszip';
@@ -15,17 +15,44 @@ function withRefreshToken(url: string, packId?: string): string {
   return `${url}${sep}__refresh=${encodeURIComponent(token)}`;
 }
 
-async function fetchJson(url: string, packId?: string): Promise<unknown> {
+async function fetchWithRefresh(url: string, packId?: string, init?: RequestInit): Promise<Response> {
   const requestUrl = withRefreshToken(url, packId);
   const res = await fetch(requestUrl, {
-    headers: { Accept: 'application/json' },
+    ...init,
     ...(packId && packRefreshToken.has(packId) ? { cache: 'no-store' as const } : {}),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Failed to fetch ${requestUrl} (${res.status}): ${body || res.statusText}`);
   }
+  return res;
+}
+
+async function fetchJson(url: string, packId?: string): Promise<unknown> {
+  const res = await fetchWithRefresh(url, packId, { headers: { Accept: 'application/json' } });
   return res.json();
+}
+
+async function fetchText(url: string, packId?: string): Promise<string> {
+  const res = await fetchWithRefresh(url, packId);
+  return res.text();
+}
+
+async function tryFetchIndexTimestamp(baseUrl: string, packId: string): Promise<string | null> {
+  try {
+    // 尝试获取 index.html (通常是 baseUrl 对应的页面)
+    // 确保以 / 结尾
+    const url = baseUrl.replace(/\/+$/, '') + '/';
+    const html = await fetchText(url, packId);
+    // 匹配 <p>Generated: 2026-03-10T17:53:42.317Z</p>
+    const match = html.match(/<p>\s*Generated:\s*(.*?)\s*<\/p>/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  } catch {
+    // 忽略错误，不是所有 pack 都有 index.html
+  }
+  return null;
 }
 
 const jsonArrayCache = new Map<string, Promise<unknown>>();
@@ -52,12 +79,16 @@ export function clearPackRuntimeCache(packId?: string) {
         jsonArrayCache.delete(key);
       }
     }
+    // 异步清除 IndexedDB 缓存
+    idbClearRemoteCache(packId).catch((e) => console.warn('Failed to clear remote cache', e));
     return;
   }
   manifestCache.clear();
   activePackBaseUrl.clear();
   jsonArrayCache.clear();
   packRefreshToken.clear();
+  // 异步清除所有 IndexedDB 缓存
+  idbClearRemoteCache().catch((e) => console.warn('Failed to clear all remote cache', e));
 }
 
 export function registerPackSource(source: PackSource) {
@@ -209,6 +240,13 @@ async function loadManifest(packId: string): Promise<PackManifest> {
           throw new Error(`packId mismatch: requested "${packId}", manifest has "${manifest.packId}"`);
         }
         activePackBaseUrl.set(packId, base);
+
+        // 尝试从 index.html 获取精确的生成时间戳
+        const timestamp = await tryFetchIndexTimestamp(base, packId);
+        if (timestamp) {
+          manifest.version = `${manifest.version}+${timestamp}`;
+        }
+
         return manifest;
       } catch (e) {
         lastError = e;
@@ -224,7 +262,7 @@ async function loadManifest(packId: string): Promise<PackManifest> {
   return task;
 }
 
-async function loadItems(base: string, manifest: PackManifest): Promise<ItemDef[]> {
+async function loadItems(base: string, manifest: PackManifest, onProgress?: (percent: number) => void): Promise<ItemDef[]> {
   if (!manifest.files.items) return [];
 
   // 检查是否为目录模式（以 / 结尾）
@@ -252,12 +290,14 @@ async function loadItems(base: string, manifest: PackManifest): Promise<ItemDef[
         console.error(`Failed to load item file ${itemFile}:`, e);
         throw e;
       }
+      onProgress?.((i + 1) / indexRaw.length);
     }
     return items;
   }
 
   // 数组模式：原有的单一 items.json 文件
   const raw = await fetchJson(`${base}/${manifest.files.items}`, manifest.packId);
+  onProgress?.(1);
   if (!Array.isArray(raw)) {
     throw new Error('$.items: expected array');
   }
@@ -446,36 +486,157 @@ function resolveLocalPackAssetUrls(pack: PackData, assets: { path: string; blob:
   };
 }
 
-export async function loadRuntimePack(packIdOrLocal: string): Promise<RuntimePackLoadResult> {
+export interface LoadProgress {
+  message: string;
+  percent: number;
+}
+
+export type ProgressCallback = (p: LoadProgress) => void;
+
+export async function loadRuntimePack(packIdOrLocal: string, onProgress?: ProgressCallback): Promise<RuntimePackLoadResult> {
   const localId = localSelectorToId(packIdOrLocal);
   if (localId) {
+    onProgress?.({ message: 'Loading local pack...', percent: 0 });
     const zipBlob = await idbGetPackZip(localId);
     if (!zipBlob) throw new Error('Local pack zip not found');
+
+    onProgress?.({ message: 'Parsing zip...', percent: 0.2 });
     const { pack, assets } = await zipToPackData(zipBlob);
+
+    onProgress?.({ message: 'Processing assets...', percent: 0.8 });
     const result = resolveLocalPackAssetUrls(pack, assets);
     await ensurePackImageProxyTokens(result.pack.manifest);
     applyImageProxyToPack(result.pack);
+
+    onProgress?.({ message: 'Done', percent: 1 });
     return result;
   }
 
-  const pack = await loadPack(packIdOrLocal);
+  const pack = await loadPack(packIdOrLocal, onProgress);
   return { pack, dispose: () => { } };
 }
 
-export async function loadPack(packId: string): Promise<PackData> {
+export async function loadPack(packId: string, onProgress?: ProgressCallback): Promise<PackData> {
+  const forceRefresh = packRefreshToken.has(packId);
+  onProgress?.({ message: 'Loading manifest...', percent: 0 });
+
   const manifest = await loadManifest(packId);
   const base = packBaseUrl(packId);
-  const itemsPromise = manifest.files.itemsLite
-    ? loadItemsLite(base, manifest)
-    : loadItems(base, manifest);
+  const version = manifest.version || '0.0.0';
+
+  const wItems = 40;
+  const wTags = 10;
+  const wTypes = 10;
+  const wRecipes = 40;
+  const wTotal = wItems + wTags + wTypes + wRecipes;
+
+  const baseProgress = 0.1;
+  const remainingProgress = 0.9;
+
+  let pItems = 0;
+  let pTags = 0;
+  let pTypes = 0;
+  let pRecipes = 0;
+
+  const update = (msg: string) => {
+    const weightedSum = pItems * wItems + pTags * wTags + pTypes * wTypes + pRecipes * wRecipes;
+    const p = baseProgress + remainingProgress * (weightedSum / wTotal);
+    onProgress?.({
+      message: msg,
+      percent: p,
+    });
+  };
+
+  const loadCached = async <T>(
+    type: string,
+    loader: (onProgress?: (p: number) => void) => Promise<T>,
+    onLoadProgress?: (p: number) => void,
+  ): Promise<T> => {
+    if (!forceRefresh) {
+      try {
+        const cached = await idbGetRemoteCache(packId, type);
+        if (cached && cached.version === version) {
+          onLoadProgress?.(1);
+          return cached.data as T;
+        }
+      } catch (e) {
+        console.warn(`[loader] Failed to read cache for ${type}`, e);
+      }
+    }
+
+    const data = await loader(onLoadProgress);
+
+    // 异步写入缓存
+    idbSetRemoteCache({
+      packId,
+      version,
+      type,
+      data: data as unknown,
+      updatedAt: Date.now(),
+    }).catch((e) => console.warn(`[loader] Failed to write cache for ${type}`, e));
+
+    return data;
+  };
+
+  const itemsLoader = async () => {
+    if (manifest.files.itemsLite) {
+      return loadCached('itemsLite', async (cb) => {
+        const res = await loadItemsLite(base, manifest);
+        cb?.(1);
+        return res;
+      }, () => {
+        pItems = 1;
+        update('Loaded items (lite)');
+      });
+    }
+    return loadCached('items', (cb) => loadItems(base, manifest, cb), (p) => {
+      pItems = p;
+      update(`Loading items ${Math.round(p * 100)}%...`);
+    });
+  };
+
+  const tagsLoader = async () => {
+    return loadCached('tags', async (cb) => {
+      const res = await loadTags(base, manifest);
+      cb?.(1);
+      return res;
+    }, () => {
+      pTags = 1;
+      update('Loaded tags');
+    });
+  };
+
+  const recipeTypesLoader = async () => {
+    return loadCached('recipeTypes', async (cb) => {
+      const res = await loadRecipeTypes(base, manifest);
+      cb?.(1);
+      return res;
+    }, () => {
+      pTypes = 1;
+      update('Loaded recipe types');
+    });
+  };
+
+  const recipesLoader = async () => {
+    return loadCached('recipes', async (cb) => {
+      const res = await loadRecipes(base, manifest);
+      cb?.(1);
+      return res;
+    }, () => {
+      pRecipes = 1;
+      update('Loaded recipes');
+    });
+  };
 
   const [itemsMaybeLite, tags, recipeTypes, recipes] = await Promise.all([
-    itemsPromise,
-    loadTags(base, manifest),
-    loadRecipeTypes(base, manifest),
-    loadRecipes(base, manifest),
+    itemsLoader(),
+    tagsLoader(),
+    recipeTypesLoader(),
+    recipesLoader(),
   ]);
   const items = itemsMaybeLite ?? [];
+
+  onProgress?.({ message: 'Processing data...', percent: 0.99 });
 
   // 从物品文件中提取内联的 recipes 和 wiki 数据
   const inlineRecipes = extractInlineRecipes(items);

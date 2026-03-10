@@ -55,6 +55,7 @@ export default {
 
   // Settings
   settings: 'Settings',
+  showLoadingOverlay: 'Show Loading Overlay',
   historyLimit: 'History Display Count',
   debugScroll: 'Enable Debug Scrolling',
   debugNavPanel: 'Navigation Stack Debug Panel',

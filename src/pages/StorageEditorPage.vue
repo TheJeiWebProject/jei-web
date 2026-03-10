@@ -522,6 +522,7 @@ const idbStoreLabels: Record<IdbStoreName, string> = {
   editor_assets: '编辑器资源',
   editor_packs: 'Pack 压缩包',
   item_icon_cache: '物品图标缓存',
+  remote_pack_cache: '远程包缓存',
 };
 
 const currentStorage = computed(() => {
