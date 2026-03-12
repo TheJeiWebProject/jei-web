@@ -304,6 +304,7 @@ import type { ItemDef, ItemKey, PackData, Recipe } from 'src/jei/types';
 import { useDialogManager } from 'src/stores/dialogManager';
 import {
   clearPackRuntimeCache,
+  getAggregateSourcePackIds,
   getActivePackBaseUrl,
   getPackBaseUrls,
   loadPackItemDetail,
@@ -532,15 +533,40 @@ const contextMenuKeyHash = ref<string | null>(null);
 const activePackMirrorMode = computed(
   () => settingsStore.packMirrorSelectionModeByPack[activePackId.value] ?? 'auto',
 );
+
+type MirrorRouteEntry = {
+  sourcePackId: string;
+  sourceLabel: string;
+  url: string;
+};
+
+function buildMirrorRouteEntriesForPack(packId: string): MirrorRouteEntry[] {
+  const aggregateSources = getAggregateSourcePackIds(packId);
+  const sourcePackIds = aggregateSources.length > 0 ? aggregateSources : [packId];
+  const out: MirrorRouteEntry[] = [];
+
+  sourcePackIds.forEach((sourcePackId) => {
+    if (sourcePackId.startsWith('local:')) return;
+    const mode = settingsStore.packMirrorSelectionModeByPack[sourcePackId] ?? 'auto';
+    const manual = settingsStore.packManualMirrorByPack[sourcePackId];
+    const mirrors = packRoutingRuntimeStore.getMirrorsForPack(sourcePackId, mode, manual);
+    const resolvedMirrors = mirrors.length > 0 ? mirrors : getPackBaseUrls(sourcePackId);
+    const sourceLabel = packRoutingRuntimeStore.sourcesByPack[sourcePackId]?.label ?? sourcePackId;
+    resolvedMirrors.forEach((url) => {
+      out.push({
+        sourcePackId,
+        sourceLabel,
+        url,
+      });
+    });
+  });
+
+  return out;
+}
+
+const activePackMirrorEntries = computed(() => buildMirrorRouteEntriesForPack(activePackId.value));
 const activePackMirrors = computed(() => {
-  const mirrors = packRoutingRuntimeStore.getMirrorsForPack(
-    activePackId.value,
-    activePackMirrorMode.value,
-    settingsStore.packManualMirrorByPack[activePackId.value],
-  );
-  if (mirrors.length) return mirrors;
-  if (activePackId.value.startsWith('local:')) return [];
-  return getPackBaseUrls(activePackId.value);
+  return activePackMirrorEntries.value.map((entry) => entry.url);
 });
 const activePackMirrorUrl = computed(() => {
   const packId = activePackId.value;
@@ -554,9 +580,11 @@ const activePackManualMirror = computed(() => {
   return activePackMirrors.value[0] ?? '';
 });
 const activePackMirrorRows = computed(() =>
-  activePackMirrors.value.map((url) => ({
-    url,
-    latencyMs: packRoutingRuntimeStore.getLatency(activePackId.value, url),
+  activePackMirrorEntries.value.map((entry) => ({
+    sourcePackId: entry.sourcePackId,
+    sourceLabel: entry.sourceLabel,
+    url: entry.url,
+    latencyMs: packRoutingRuntimeStore.getLatency(entry.sourcePackId, entry.url),
   })),
 );
 
@@ -1781,7 +1809,12 @@ async function loadPacksIndex() {
       return;
     }
     const data = (await res.json()) as {
-      packs?: Array<{ packId: string; label: string; mirrors?: string[] }>;
+      packs?: Array<{
+        packId: string;
+        label: string;
+        mirrors?: string[];
+        aggregateDescriptor?: string;
+      }>;
     };
     if (Array.isArray(data.packs)) {
       const remoteIds = new Set(data.packs.map((p) => p.packId));
@@ -1794,8 +1827,16 @@ async function loadPacksIndex() {
       const remoteSources: Record<string, PackSourceSnapshot> = {};
       const remote = data.packs.map((p) => {
         const mirrors = normalizeMirrorUrls(p.mirrors ?? []);
+        const aggregateDescriptor =
+          typeof p.aggregateDescriptor === 'string' && p.aggregateDescriptor.trim().length > 0
+            ? p.aggregateDescriptor.trim()
+            : undefined;
         const effectiveMirrors =
-          mirrors.length > 0 ? mirrors : [`/packs/${encodeURIComponent(p.packId)}`];
+          mirrors.length > 0
+            ? mirrors
+            : aggregateDescriptor
+              ? []
+              : [`/packs/${encodeURIComponent(p.packId)}`];
         remoteSources[p.packId] = {
           label: p.label,
           mirrors: effectiveMirrors,
@@ -1804,6 +1845,7 @@ async function loadPacksIndex() {
           packId: p.packId,
           label: p.label,
           mirrors: effectiveMirrors,
+          ...(aggregateDescriptor ? { aggregateDescriptor } : {}),
         });
         return { label: p.label, value: p.packId };
       });
@@ -1904,17 +1946,16 @@ async function measureMirrorLatency(url: string): Promise<number | null> {
 }
 
 async function refreshActivePackMirrorLatency() {
-  const packId = activePackId.value;
-  const mirrors = activePackMirrors.value;
-  if (!mirrors.length) return;
+  const mirrorRows = activePackMirrorRows.value;
+  if (!mirrorRows.length) return;
   mirrorLatencyLoading.value = true;
   try {
     await Promise.allSettled(
-      mirrors.map(async (url) => {
-        const latency = await measureMirrorLatency(url);
+      mirrorRows.map(async (row) => {
+        const latency = await measureMirrorLatency(row.url);
         // Incremental update: each mirror writes back immediately when finished.
-        packRoutingRuntimeStore.setLatency(packId, url, latency);
-        setPackMirrorLatencyHint(packId, url, latency);
+        packRoutingRuntimeStore.setLatency(row.sourcePackId, row.url, latency);
+        setPackMirrorLatencyHint(row.sourcePackId, row.url, latency);
       }),
     );
   } finally {

@@ -15,6 +15,11 @@
         "https://jeiskland.sirrus.cc/",
         "https://skland-data.api.jei.mic.run/"
       ]
+    },
+    {
+      "packId": "aef-aggregated",
+      "label": "Arknights:Endfield (Aggregated)",
+      "aggregateDescriptor": "aggregates/aef-aggregated.json"
     }
   ]
 }

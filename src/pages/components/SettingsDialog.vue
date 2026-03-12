@@ -392,7 +392,7 @@
                       :label="t('packMirrorManualSelect')"
                       :options="
                         packMirrors.map((m) => ({
-                          label: `${m.url} (${formatLatency(m.latencyMs)})`,
+                          label: `${m.sourceLabel ? `[${m.sourceLabel}] ` : ''}${m.url} (${formatLatency(m.latencyMs)})`,
                           value: m.url,
                         }))
                       "
@@ -408,9 +408,15 @@
                       @click="$emit('refresh-mirror-latency')"
                     />
                     <q-list dense bordered separator>
-                      <q-item v-for="mirror in packMirrors" :key="mirror.url">
+                      <q-item
+                        v-for="mirror in packMirrors"
+                        :key="`${mirror.sourcePackId || ''}::${mirror.url}`"
+                      >
                         <q-item-section>
                           <q-item-label>{{ mirror.url }}</q-item-label>
+                          <q-item-label v-if="mirror.sourceLabel" caption>
+                            来源: {{ mirror.sourceLabel }} ({{ mirror.sourcePackId || '-' }})
+                          </q-item-label>
                           <q-item-label caption>
                             {{ t('packMirrorLatencyLabel') }}: {{ formatLatency(mirror.latencyMs) }}
                           </q-item-label>
@@ -602,7 +608,12 @@ const props = defineProps<{
     }>;
   }>;
   customPackSources: Array<{ packId: string; url: string; label?: string }>;
-  packMirrors: Array<{ url: string; latencyMs: number | null }>;
+  packMirrors: Array<{
+    url: string;
+    latencyMs: number | null;
+    sourcePackId?: string;
+    sourceLabel?: string;
+  }>;
   activePackMirrorUrl: string;
   packMirrorSelectionMode: 'auto' | 'manual';
   packManualMirror: string;

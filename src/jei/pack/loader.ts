@@ -1,4 +1,15 @@
-import type { ItemDef, PackData, PackManifest, PackTags, Recipe, RecipeTypeDef } from 'src/jei/types';
+import type {
+  InlineRecipe,
+  ItemDef,
+  PackData,
+  PackManifest,
+  PackTags,
+  Recipe,
+  RecipeTypeDef,
+  SlotContent,
+  Stack,
+  TagValue,
+} from 'src/jei/types';
 import { stableJsonStringify } from 'src/jei/utils/stableJson';
 import { idbClearRemoteCache, idbGetPackZip, idbGetRemoteCache, idbSetRemoteCache } from 'src/jei/utils/idb';
 import { assertItemDef, assertPackManifest, assertPackTags, assertRecipe, assertRecipeTypeDef } from './validate';
@@ -62,7 +73,31 @@ export interface PackSource {
   packId: string;
   label: string;
   mirrors: string[];
+  aggregateDescriptor?: string;
 }
+
+type AggregateSourceDescriptor = {
+  packId: string;
+  priority: number;
+  matchByName: boolean;
+};
+
+type AggregatePackDescriptor = {
+  displayName?: string;
+  gameId?: string;
+  sources: AggregateSourceDescriptor[];
+};
+
+type AggregateSourceRuntime = {
+  packId: string;
+  recipeIdPrefix: string;
+  recipeTypePrefix: string;
+  itemIdAlias: Map<string, string>;
+};
+
+type AggregatePackRuntime = {
+  bySourcePackId: Map<string, AggregateSourceRuntime>;
+};
 
 const packRegistry = new Map<string, PackSource>();
 const activePackBaseUrl = new Map<string, string>();
@@ -70,9 +105,13 @@ const packMirrorMode = new Map<string, 'auto' | 'manual'>();
 const packManualMirror = new Map<string, string>();
 const mirrorLatencyCache = new Map<string, { latencyMs: number | null; measuredAt: number }>();
 const mirrorLatencyWarmupTask = new Map<string, Promise<void>>();
+const aggregateDescriptorCache = new Map<string, Promise<AggregatePackDescriptor>>();
+const aggregateRuntimeCache = new Map<string, AggregatePackRuntime>();
+const aggregateLoadStack = new Set<string>();
 
 const MIRROR_LATENCY_TIMEOUT_MS = 4500;
 const MIRROR_LATENCY_CACHE_TTL_MS = 2 * 60 * 1000;
+const AGGREGATE_DETAIL_PREFIX = '__agg__/';
 
 function mirrorLatencyCacheKey(packId: string, url: string): string {
   return `${packId}::${url.replace(/\/+$/, '')}`;
@@ -190,6 +229,13 @@ export function clearPackRuntimeCache(packId?: string) {
     activePackBaseUrl.delete(packId);
     clearMirrorLatencyCache(packId);
     mirrorLatencyWarmupTask.delete(packId);
+    aggregateDescriptorCache.delete(packId);
+    aggregateRuntimeCache.delete(packId);
+    for (const [virtualPackId, runtime] of aggregateRuntimeCache.entries()) {
+      if (runtime.bySourcePackId.has(packId)) {
+        aggregateRuntimeCache.delete(virtualPackId);
+      }
+    }
     packRefreshToken.set(packId, `${Date.now()}`);
     for (const key of jsonArrayCache.keys()) {
       if (key.startsWith(`${packId}:`)) {
@@ -204,6 +250,9 @@ export function clearPackRuntimeCache(packId?: string) {
   activePackBaseUrl.clear();
   clearMirrorLatencyCache();
   mirrorLatencyWarmupTask.clear();
+  aggregateDescriptorCache.clear();
+  aggregateRuntimeCache.clear();
+  aggregateLoadStack.clear();
   jsonArrayCache.clear();
   packRefreshToken.clear();
   // 异步清除所有 IndexedDB 缓存
@@ -216,6 +265,12 @@ export function registerPackSource(source: PackSource) {
 
 export function getPackSource(packId: string): PackSource | undefined {
   return packRegistry.get(packId);
+}
+
+export function getAggregateSourcePackIds(packId: string): string[] {
+  const runtime = aggregateRuntimeCache.get(packId);
+  if (!runtime) return [];
+  return Array.from(runtime.bySourcePackId.keys());
 }
 
 export function setPackMirrorPreference(
@@ -270,11 +325,14 @@ function scoreMirrorUrlByHostProximity(url: string, current: URL): number {
 
 export function getPackBaseUrls(packId: string): string[] {
   const source = packRegistry.get(packId);
-  if (source?.mirrors?.length) {
+  if (source) {
     const mirrors = Array.from(
-      new Set(source.mirrors.map((m) => m.replace(/\/+$/, '')).filter((m) => m.length > 0)),
+      new Set((source.mirrors ?? []).map((m) => m.replace(/\/+$/, '')).filter((m) => m.length > 0)),
     );
     if (!mirrors.length) {
+      if (typeof source.aggregateDescriptor === 'string' && source.aggregateDescriptor.trim().length > 0) {
+        return [];
+      }
       const safe = encodeURIComponent(packId);
       return [`/packs/${safe}`];
     }
@@ -394,6 +452,633 @@ function extractWikiData(items: ItemDef[]): Record<string, Record<string, unknow
     }
   });
   return wikiMap;
+}
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isAggregateSource(
+  source: PackSource | undefined,
+): source is PackSource & { aggregateDescriptor: string } {
+  return (
+    !!source &&
+    typeof source.aggregateDescriptor === 'string' &&
+    source.aggregateDescriptor.trim().length > 0
+  );
+}
+
+function normalizeAggregateItemName(name: string): string {
+  return name.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function encodeAggregateDetailPath(sourcePackId: string, detailPath: string): string {
+  const normalizedPath = detailPath.replace(/^\/+/, '');
+  return `${AGGREGATE_DETAIL_PREFIX}${encodeURIComponent(sourcePackId)}/${normalizedPath}`;
+}
+
+function decodeAggregateDetailPath(
+  detailPath: string,
+): { sourcePackId: string; sourcePath: string } | null {
+  const normalized = detailPath.replace(/^\/+/, '');
+  if (!normalized.startsWith(AGGREGATE_DETAIL_PREFIX)) return null;
+  const body = normalized.slice(AGGREGATE_DETAIL_PREFIX.length);
+  const splitAt = body.indexOf('/');
+  if (splitAt <= 0) return null;
+  const sourcePackId = decodeURIComponent(body.slice(0, splitAt));
+  const sourcePath = body.slice(splitAt + 1);
+  if (!sourcePackId || !sourcePath) return null;
+  return { sourcePackId, sourcePath };
+}
+
+function resolveAggregateDescriptorUrl(raw: string): string {
+  const descriptor = raw.trim();
+  if (!descriptor) return descriptor;
+  if (isAbsoluteLikeUrlOrPath(descriptor)) return descriptor;
+  const clean = descriptor.replace(/^\.?\/+/, '');
+  return `/packs/${clean}`;
+}
+
+function parseAggregateDescriptor(raw: unknown, jsonPath: string): AggregatePackDescriptor {
+  if (!isRecordLike(raw)) {
+    throw new Error(`${jsonPath}: expected object`);
+  }
+  const displayName =
+    typeof raw.displayName === 'string' && raw.displayName.trim().length > 0
+      ? raw.displayName.trim()
+      : undefined;
+  const gameId =
+    typeof raw.gameId === 'string' && raw.gameId.trim().length > 0 ? raw.gameId.trim() : undefined;
+
+  const sourceRaw = raw.sources;
+  if (!Array.isArray(sourceRaw) || sourceRaw.length === 0) {
+    throw new Error(`${jsonPath}.sources: expected non-empty array`);
+  }
+
+  const parsedWithIndex: Array<AggregateSourceDescriptor & { index: number }> = sourceRaw.map(
+    (entry, index) => {
+      let packId = '';
+      let priority = index;
+      let matchByName = true;
+
+      if (typeof entry === 'string') {
+        packId = entry.trim();
+      } else if (isRecordLike(entry)) {
+        packId = typeof entry.packId === 'string' ? entry.packId.trim() : '';
+        if (typeof entry.priority === 'number' && Number.isFinite(entry.priority)) {
+          priority = entry.priority;
+        }
+        if (typeof entry.matchByName === 'boolean') {
+          matchByName = entry.matchByName;
+        }
+      }
+
+      if (!packId) {
+        throw new Error(`${jsonPath}.sources[${index}].packId: expected non-empty string`);
+      }
+
+      return {
+        packId,
+        priority,
+        matchByName,
+        index,
+      };
+    },
+  );
+
+  parsedWithIndex.sort((a, b) => a.priority - b.priority || a.index - b.index);
+  const seen = new Set<string>();
+  const sources: AggregateSourceDescriptor[] = parsedWithIndex.map((entry) => {
+    if (seen.has(entry.packId)) {
+      throw new Error(`${jsonPath}.sources: duplicate packId "${entry.packId}"`);
+    }
+    seen.add(entry.packId);
+    return {
+      packId: entry.packId,
+      priority: entry.priority,
+      matchByName: entry.matchByName,
+    };
+  });
+
+  return {
+    ...(displayName ? { displayName } : {}),
+    ...(gameId ? { gameId } : {}),
+    sources,
+  };
+}
+
+async function loadAggregateDescriptor(
+  packId: string,
+  source: PackSource & { aggregateDescriptor: string },
+): Promise<AggregatePackDescriptor> {
+  const cached = aggregateDescriptorCache.get(packId);
+  if (cached) return cached;
+
+  const task = (async () => {
+    const descriptorUrl = resolveAggregateDescriptorUrl(source.aggregateDescriptor);
+    if (!descriptorUrl) {
+      throw new Error(`Pack "${packId}" aggregateDescriptor is empty`);
+    }
+    const raw = await fetchJson(descriptorUrl, packId);
+    return parseAggregateDescriptor(raw, '$.aggregateDescriptor');
+  })().catch((err: unknown) => {
+    aggregateDescriptorCache.delete(packId);
+    throw err;
+  });
+
+  aggregateDescriptorCache.set(packId, task);
+  return task;
+}
+
+function remapItemIdByAlias(id: string, alias: Map<string, string>): string {
+  return alias.get(id) ?? id;
+}
+
+function remapStackForAggregate(stack: Stack, alias: Map<string, string>): Stack {
+  if (stack.kind !== 'item') return { ...stack };
+  return {
+    ...stack,
+    id: remapItemIdByAlias(stack.id, alias),
+  };
+}
+
+function remapSlotContentForAggregate(
+  content: SlotContent,
+  alias: Map<string, string>,
+): SlotContent {
+  if (Array.isArray(content)) {
+    return content.map((stack) => remapStackForAggregate(stack, alias));
+  }
+  return remapStackForAggregate(content, alias);
+}
+
+function remapSlotContentsForAggregate(
+  slotContents: Record<string, SlotContent>,
+  alias: Map<string, string>,
+): Record<string, SlotContent> {
+  const out: Record<string, SlotContent> = {};
+  Object.keys(slotContents).forEach((slotId) => {
+    out[slotId] = remapSlotContentForAggregate(slotContents[slotId]!, alias);
+  });
+  return out;
+}
+
+function transformInlineRecipeForAggregate(
+  recipe: InlineRecipe,
+  runtime: AggregateSourceRuntime,
+): InlineRecipe {
+  const out: InlineRecipe = {
+    id: `${runtime.recipeIdPrefix}${recipe.id}`,
+    type: `${runtime.recipeTypePrefix}${recipe.type}`,
+    slotContents: remapSlotContentsForAggregate(recipe.slotContents, runtime.itemIdAlias),
+  };
+  if (recipe.params !== undefined) out.params = { ...recipe.params };
+  if (recipe.inlineItems !== undefined) {
+    out.inlineItems = recipe.inlineItems.map((item) => transformItemForAggregate(item, runtime));
+  }
+  return out;
+}
+
+function transformItemForAggregate(item: ItemDef, runtime: AggregateSourceRuntime): ItemDef {
+  const out: ItemDef = {
+    ...item,
+    key: {
+      ...item.key,
+      id: remapItemIdByAlias(item.key.id, runtime.itemIdAlias),
+    },
+  };
+
+  if (item.iconSprite) out.iconSprite = { ...item.iconSprite };
+  if (item.tags) out.tags = [...item.tags];
+  if (item.rarity) out.rarity = { ...item.rarity };
+  if (item.belt) out.belt = { ...item.belt };
+  if (item.wiki) out.wiki = { ...item.wiki };
+  if (item.recipes) {
+    out.recipes = item.recipes.map((recipe) => transformInlineRecipeForAggregate(recipe, runtime));
+  }
+  if (item.detailPath) {
+    out.detailPath = encodeAggregateDetailPath(runtime.packId, item.detailPath);
+  }
+  return out;
+}
+
+function transformRecipeForAggregate(recipe: Recipe, runtime: AggregateSourceRuntime): Recipe {
+  const out: Recipe = {
+    id: `${runtime.recipeIdPrefix}${recipe.id}`,
+    type: `${runtime.recipeTypePrefix}${recipe.type}`,
+    slotContents: remapSlotContentsForAggregate(recipe.slotContents, runtime.itemIdAlias),
+  };
+  if (recipe.params !== undefined) out.params = { ...recipe.params };
+  if (recipe.inlineItems !== undefined) {
+    out.inlineItems = recipe.inlineItems.map((item) => transformItemForAggregate(item, runtime));
+  }
+  if (recipe.detailPath) {
+    out.detailPath = encodeAggregateDetailPath(runtime.packId, recipe.detailPath);
+  }
+  if (recipe.detailLoaded !== undefined) out.detailLoaded = recipe.detailLoaded;
+  return out;
+}
+
+function transformRecipeTypeForAggregate(
+  recipeType: RecipeTypeDef,
+  runtime: AggregateSourceRuntime,
+): RecipeTypeDef {
+  const out: RecipeTypeDef = {
+    ...recipeType,
+    key: `${runtime.recipeTypePrefix}${recipeType.key}`,
+  };
+  if (recipeType.machine) {
+    if (Array.isArray(recipeType.machine)) {
+      out.machine = recipeType.machine.map((machine) => ({
+        ...machine,
+        id: remapItemIdByAlias(machine.id, runtime.itemIdAlias),
+      }));
+    } else {
+      out.machine = {
+        ...recipeType.machine,
+        id: remapItemIdByAlias(recipeType.machine.id, runtime.itemIdAlias),
+      };
+    }
+  }
+  if (recipeType.slots) {
+    out.slots = recipeType.slots.map((slot) => ({
+      ...slot,
+      accept: [...slot.accept],
+    }));
+  }
+  if (recipeType.paramSchema) out.paramSchema = { ...recipeType.paramSchema };
+  if (recipeType.defaults) out.defaults = { ...recipeType.defaults };
+  return out;
+}
+
+function remapTagValueForAggregate(value: TagValue, alias: Map<string, string>): TagValue {
+  if (typeof value === 'string') {
+    return remapItemIdByAlias(value, alias);
+  }
+  const id = remapItemIdByAlias(value.id, alias);
+  if (value.required === undefined) return { id };
+  return { id, required: value.required };
+}
+
+function remapPackTagsForAggregate(
+  tags: PackTags | undefined,
+  alias: Map<string, string>,
+): PackTags | undefined {
+  if (!tags?.item) return undefined;
+  const out: PackTags = { item: {} };
+  Object.keys(tags.item).forEach((tagId) => {
+    const tagDef = tags.item?.[tagId];
+    if (!tagDef) return;
+    out.item![tagId] = {
+      ...(tagDef.replace !== undefined ? { replace: tagDef.replace } : {}),
+      values: tagDef.values.map((value) => remapTagValueForAggregate(value, alias)),
+    };
+  });
+  return out;
+}
+
+function tagValueHash(value: TagValue): string {
+  if (typeof value === 'string') return `s:${value}`;
+  return `o:${value.id}:${value.required ? '1' : '0'}`;
+}
+
+function pickPreferLongerString(a?: string, b?: string): string | undefined {
+  const left = (a ?? '').trim();
+  const right = (b ?? '').trim();
+  if (!left) return right || undefined;
+  if (!right) return left;
+  if (left === right) return left;
+  if (left.length !== right.length) return left.length > right.length ? left : right;
+  return left < right ? left : right;
+}
+
+function pickPreferDenseObject<T extends Record<string, unknown>>(a: T, b: T): T {
+  const scoreA = Object.values(a).filter((value) => value !== undefined && value !== null).length;
+  const scoreB = Object.values(b).filter((value) => value !== undefined && value !== null).length;
+  if (scoreA !== scoreB) return scoreA > scoreB ? a : b;
+  const textA = stableJsonStringify(a);
+  const textB = stableJsonStringify(b);
+  if (textA.length !== textB.length) return textA.length > textB.length ? a : b;
+  return textA <= textB ? a : b;
+}
+
+function pickPreferInformativeValue(a: unknown, b: unknown): unknown {
+  const textA = stableJsonStringify(a ?? null);
+  const textB = stableJsonStringify(b ?? null);
+  if (textA.length !== textB.length) return textA.length > textB.length ? a : b;
+  return textA <= textB ? a : b;
+}
+
+function mergeWikiForAggregate(
+  a: Record<string, unknown> | undefined,
+  b: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!a && !b) return undefined;
+  if (!a) return { ...b! };
+  if (!b) return { ...a };
+  const out: Record<string, unknown> = { ...a };
+  Object.keys(b).forEach((key) => {
+    if (!(key in out)) {
+      out[key] = b[key];
+      return;
+    }
+    out[key] = pickPreferInformativeValue(out[key], b[key]);
+  });
+  return out;
+}
+
+function mergePackTagsForAggregate(
+  base: PackTags | undefined,
+  incoming: PackTags | undefined,
+): PackTags | undefined {
+  if (!base && !incoming) return undefined;
+  const out: PackTags = {
+    ...(base?.item ? { item: { ...base.item } } : {}),
+  };
+  if (!incoming?.item) return out;
+  if (!out.item) out.item = {};
+
+  Object.keys(incoming.item).forEach((tagId) => {
+    const incomingTag = incoming.item?.[tagId];
+    if (!incomingTag) return;
+    const existing = out.item?.[tagId];
+    if (!existing) {
+      out.item![tagId] = {
+        ...(incomingTag.replace !== undefined ? { replace: incomingTag.replace } : {}),
+        values: [...incomingTag.values],
+      };
+      return;
+    }
+    const seen = new Set(existing.values.map((value) => tagValueHash(value)));
+    const mergedValues = [...existing.values];
+    incomingTag.values.forEach((value) => {
+      const key = tagValueHash(value);
+      if (seen.has(key)) return;
+      seen.add(key);
+      mergedValues.push(value);
+    });
+    out.item![tagId] = {
+      ...(existing.replace === true || incomingTag.replace === true ? { replace: true } : {}),
+      values: mergedValues,
+    };
+  });
+
+  return out;
+}
+
+function mergeInlineRecipesForAggregate(
+  base: InlineRecipe[] | undefined,
+  incoming: InlineRecipe[] | undefined,
+): InlineRecipe[] | undefined {
+  if ((!base || base.length === 0) && (!incoming || incoming.length === 0)) return undefined;
+  if (!base || base.length === 0) return [...(incoming ?? [])];
+  if (!incoming || incoming.length === 0) return [...base];
+  const out = [...base];
+  const existing = new Set(base.map((recipe) => recipe.id));
+  incoming.forEach((recipe) => {
+    if (existing.has(recipe.id)) return;
+    existing.add(recipe.id);
+    out.push(recipe);
+  });
+  return out;
+}
+
+function mergeItemForAggregate(base: ItemDef, incoming: ItemDef): ItemDef {
+  const out: ItemDef = {
+    ...base,
+    key: { ...base.key },
+  };
+  if (base.iconSprite) out.iconSprite = { ...base.iconSprite };
+  if (base.tags) out.tags = [...base.tags];
+  if (base.rarity) out.rarity = { ...base.rarity };
+  if (base.belt) out.belt = { ...base.belt };
+  if (base.wiki) out.wiki = { ...base.wiki };
+  if (base.recipes) out.recipes = [...base.recipes];
+
+  out.name = pickPreferLongerString(base.name, incoming.name) ?? out.name;
+  const icon = pickPreferLongerString(base.icon, incoming.icon);
+  if (icon !== undefined) out.icon = icon;
+  else delete out.icon;
+  const source = pickPreferLongerString(base.source, incoming.source);
+  if (source !== undefined) out.source = source;
+  else delete out.source;
+  const description = pickPreferLongerString(base.description, incoming.description);
+  if (description !== undefined) out.description = description;
+  else delete out.description;
+  const detailPath = pickPreferLongerString(base.detailPath, incoming.detailPath);
+  if (detailPath !== undefined) out.detailPath = detailPath;
+  else delete out.detailPath;
+  if (base.detailLoaded === true || incoming.detailLoaded === true) {
+    out.detailLoaded = true;
+  }
+
+  if (base.iconSprite && incoming.iconSprite) {
+    out.iconSprite = pickPreferDenseObject(base.iconSprite, incoming.iconSprite);
+  } else if (!base.iconSprite && incoming.iconSprite) {
+    out.iconSprite = { ...incoming.iconSprite };
+  }
+
+  if (base.rarity && incoming.rarity) {
+    const mergedRarity: NonNullable<ItemDef['rarity']> = {
+      stars: Math.max(base.rarity.stars, incoming.rarity.stars),
+    };
+    const label = pickPreferLongerString(base.rarity.label, incoming.rarity.label);
+    if (label !== undefined) mergedRarity.label = label;
+    const color = pickPreferLongerString(base.rarity.color, incoming.rarity.color);
+    if (color !== undefined) mergedRarity.color = color;
+    const token = pickPreferLongerString(base.rarity.token, incoming.rarity.token);
+    if (token !== undefined) mergedRarity.token = token;
+    const tagId = pickPreferLongerString(base.rarity.tagId, incoming.rarity.tagId);
+    if (tagId !== undefined) mergedRarity.tagId = tagId;
+    out.rarity = mergedRarity;
+  } else if (!base.rarity && incoming.rarity) {
+    out.rarity = { ...incoming.rarity };
+  }
+
+  if (base.belt && incoming.belt) {
+    out.belt = {
+      speed: Math.max(base.belt.speed, incoming.belt.speed),
+    };
+  } else if (!base.belt && incoming.belt) {
+    out.belt = { ...incoming.belt };
+  }
+
+  if (incoming.tags?.length) {
+    const mergedTags = new Set(out.tags ?? []);
+    incoming.tags.forEach((tag) => mergedTags.add(tag));
+    out.tags = Array.from(mergedTags);
+  }
+  const wiki = mergeWikiForAggregate(out.wiki, incoming.wiki);
+  if (wiki !== undefined) out.wiki = wiki;
+  else delete out.wiki;
+  const recipes = mergeInlineRecipesForAggregate(out.recipes, incoming.recipes);
+  if (recipes) out.recipes = recipes;
+
+  return out;
+}
+
+async function loadAggregatePack(
+  packId: string,
+  source: PackSource & { aggregateDescriptor: string },
+  onProgress?: ProgressCallback,
+): Promise<PackData> {
+  if (aggregateLoadStack.has(packId)) {
+    throw new Error(`Aggregate source cycle detected for "${packId}"`);
+  }
+  aggregateLoadStack.add(packId);
+  try {
+    onProgress?.({ message: 'Loading aggregate descriptor...', percent: 0 });
+    const descriptor = await loadAggregateDescriptor(packId, source);
+    if (!descriptor.sources.length) {
+      throw new Error(`Aggregate descriptor for "${packId}" has no sources`);
+    }
+
+    if (descriptor.sources.some((entry) => entry.packId === packId)) {
+      throw new Error(`Aggregate source "${packId}" cannot include itself`);
+    }
+    descriptor.sources.forEach((entry) => {
+      const nested = getPackSource(entry.packId);
+      if (isAggregateSource(nested)) {
+        throw new Error(
+          `Aggregate source "${packId}" cannot reference virtual source "${entry.packId}"`,
+        );
+      }
+    });
+
+    const shouldForceSourceRefresh = packRefreshToken.has(packId);
+    if (shouldForceSourceRefresh) {
+      descriptor.sources.forEach((entry) => clearPackRuntimeCache(entry.packId));
+    }
+
+    const loadedByPriority: Array<{ sourceDef: AggregateSourceDescriptor; pack: PackData }> = [];
+    const loadBudget = 0.75;
+    const segment = loadBudget / descriptor.sources.length;
+
+    for (let i = 0; i < descriptor.sources.length; i += 1) {
+      const sourceDef = descriptor.sources[i]!;
+      const progressStart = i * segment;
+      const progressPack = await loadPack(sourceDef.packId, (p) => {
+        onProgress?.({
+          message: `[${sourceDef.packId}] ${p.message}`,
+          percent: progressStart + p.percent * segment,
+        });
+      });
+      loadedByPriority.push({ sourceDef, pack: progressPack });
+    }
+
+    onProgress?.({ message: 'Aggregating sources...', percent: loadBudget });
+
+    const nameCandidatesByName = new Map<string, Set<string>>();
+    loadedByPriority.forEach(({ sourceDef, pack }) => {
+      if (!sourceDef.matchByName) return;
+      pack.items.forEach((item) => {
+        const nameKey = normalizeAggregateItemName(item.name ?? '');
+        if (!nameKey) return;
+        const candidates = nameCandidatesByName.get(nameKey) ?? new Set<string>();
+        candidates.add(item.key.id);
+        nameCandidatesByName.set(nameKey, candidates);
+      });
+    });
+
+    const canonicalItemIdByName = new Map<string, string>();
+    nameCandidatesByName.forEach((candidates, nameKey) => {
+      const sorted = Array.from(candidates).sort((a, b) => a.localeCompare(b));
+      const canonical = sorted[0];
+      if (canonical) canonicalItemIdByName.set(nameKey, canonical);
+    });
+
+    const sourceRuntimes: AggregateSourceRuntime[] = loadedByPriority.map(({ sourceDef, pack }) => {
+      const alias = new Map<string, string>();
+      if (sourceDef.matchByName) {
+        pack.items.forEach((item) => {
+          const nameKey = normalizeAggregateItemName(item.name ?? '');
+          if (!nameKey) return;
+          const canonical = canonicalItemIdByName.get(nameKey);
+          if (!canonical) return;
+          if (canonical !== item.key.id) {
+            alias.set(item.key.id, canonical);
+          }
+        });
+      }
+      return {
+        packId: sourceDef.packId,
+        recipeIdPrefix: `${sourceDef.packId}::`,
+        recipeTypePrefix: `${sourceDef.packId}::`,
+        itemIdAlias: alias,
+      };
+    });
+
+    const mergedItemsByHash = new Map<string, ItemDef>();
+    const mergedRecipeTypesByKey = new Map<string, RecipeTypeDef>();
+    const mergedRecipesById = new Map<string, Recipe>();
+    let mergedTags: PackTags | undefined;
+
+    loadedByPriority.forEach(({ pack }, index) => {
+      const runtime = sourceRuntimes[index]!;
+      const items = pack.items.map((item) => transformItemForAggregate(item, runtime));
+      const recipeTypes = pack.recipeTypes.map((recipeType) =>
+        transformRecipeTypeForAggregate(recipeType, runtime),
+      );
+      const recipes = pack.recipes.map((recipe) => transformRecipeForAggregate(recipe, runtime));
+      const tags = remapPackTagsForAggregate(pack.tags, runtime.itemIdAlias);
+
+      items.forEach((item) => {
+        const key = itemKeyHash(item);
+        const existing = mergedItemsByHash.get(key);
+        if (!existing) {
+          mergedItemsByHash.set(key, item);
+          return;
+        }
+        mergedItemsByHash.set(key, mergeItemForAggregate(existing, item));
+      });
+      recipeTypes.forEach((recipeType) => {
+        if (!mergedRecipeTypesByKey.has(recipeType.key)) {
+          mergedRecipeTypesByKey.set(recipeType.key, recipeType);
+        }
+      });
+      recipes.forEach((recipe) => {
+        if (!mergedRecipesById.has(recipe.id)) {
+          mergedRecipesById.set(recipe.id, recipe);
+        }
+      });
+      mergedTags = mergePackTagsForAggregate(mergedTags, tags);
+    });
+
+    const mergedRecipes = Array.from(mergedRecipesById.values());
+    const mergedItems = mergeInlineItems(Array.from(mergedItemsByHash.values()), mergedRecipes);
+    const wikiData = extractWikiData(mergedItems);
+
+    const primaryManifest = loadedByPriority[0]!.pack.manifest;
+    const manifest: PackManifest = {
+      ...primaryManifest,
+      files: {
+        ...primaryManifest.files,
+      },
+      packId,
+      displayName: descriptor.displayName ?? source.label ?? primaryManifest.displayName,
+      gameId: descriptor.gameId ?? primaryManifest.gameId,
+      version: `${primaryManifest.version}+agg(${descriptor.sources.map((s) => s.packId).join(',')})`,
+    };
+    delete manifest.imageProxy;
+
+    const out: PackData = {
+      manifest,
+      items: mergedItems,
+      recipeTypes: Array.from(mergedRecipeTypesByKey.values()),
+      recipes: mergedRecipes,
+    };
+    if (mergedTags !== undefined) out.tags = mergedTags;
+    if (Object.keys(wikiData).length > 0) out.wiki = wikiData;
+
+    aggregateRuntimeCache.set(packId, {
+      bySourcePackId: new Map(sourceRuntimes.map((runtime) => [runtime.packId, runtime])),
+    });
+
+    onProgress?.({ message: 'Done', percent: 1 });
+    return out;
+  } finally {
+    aggregateLoadStack.delete(packId);
+  }
 }
 
 type ManifestLoadResult = {
@@ -777,6 +1462,11 @@ export async function loadRuntimePack(packIdOrLocal: string, onProgress?: Progre
 }
 
 export async function loadPack(packId: string, onProgress?: ProgressCallback): Promise<PackData> {
+  const source = getPackSource(packId);
+  if (isAggregateSource(source)) {
+    return loadAggregatePack(packId, source, onProgress);
+  }
+
   const forceRefresh = packRefreshToken.has(packId);
   onProgress?.({ message: 'Loading manifest...', percent: 0 });
 
@@ -920,6 +1610,29 @@ export async function loadPack(packId: string, onProgress?: ProgressCallback): P
 }
 
 export async function loadPackItemDetail(packId: string, detailPath: string): Promise<ItemDef> {
+  const source = getPackSource(packId);
+  if (isAggregateSource(source)) {
+    const detailRef = decodeAggregateDetailPath(detailPath);
+    if (!detailRef) {
+      throw new Error(`Invalid aggregate item detail path: "${detailPath}"`);
+    }
+    const runtime = aggregateRuntimeCache.get(packId);
+    if (!runtime) {
+      throw new Error(`Aggregate runtime not initialized for "${packId}"`);
+    }
+    const sourceRuntime = runtime.bySourcePackId.get(detailRef.sourcePackId);
+    if (!sourceRuntime) {
+      throw new Error(
+        `Aggregate item detail source "${detailRef.sourcePackId}" not found for "${packId}"`,
+      );
+    }
+    const sourceItem = await loadPackItemDetail(detailRef.sourcePackId, detailRef.sourcePath);
+    const item = transformItemForAggregate(sourceItem, sourceRuntime);
+    item.detailPath = encodeAggregateDetailPath(detailRef.sourcePackId, detailRef.sourcePath);
+    item.detailLoaded = true;
+    return item;
+  }
+
   const base = packBaseUrl(packId);
   const normalizedPath = detailPath.replace(/^\/+/, '');
   const raw = await resolveDetailRaw(packId, base, normalizedPath, 'item detail');
@@ -967,6 +1680,29 @@ async function resolveDetailRaw(
 }
 
 export async function loadPackRecipeDetail(packId: string, detailPath: string): Promise<Recipe> {
+  const source = getPackSource(packId);
+  if (isAggregateSource(source)) {
+    const detailRef = decodeAggregateDetailPath(detailPath);
+    if (!detailRef) {
+      throw new Error(`Invalid aggregate recipe detail path: "${detailPath}"`);
+    }
+    const runtime = aggregateRuntimeCache.get(packId);
+    if (!runtime) {
+      throw new Error(`Aggregate runtime not initialized for "${packId}"`);
+    }
+    const sourceRuntime = runtime.bySourcePackId.get(detailRef.sourcePackId);
+    if (!sourceRuntime) {
+      throw new Error(
+        `Aggregate recipe detail source "${detailRef.sourcePackId}" not found for "${packId}"`,
+      );
+    }
+    const sourceRecipe = await loadPackRecipeDetail(detailRef.sourcePackId, detailRef.sourcePath);
+    const recipe = transformRecipeForAggregate(sourceRecipe, sourceRuntime);
+    recipe.detailPath = encodeAggregateDetailPath(detailRef.sourcePackId, detailRef.sourcePath);
+    recipe.detailLoaded = true;
+    return recipe;
+  }
+
   const base = packBaseUrl(packId);
   const normalizedPath = detailPath.replace(/^\/+/, '');
   const raw = await resolveDetailRaw(packId, base, normalizedPath, 'recipe detail');

@@ -1,0 +1,16 @@
+{
+  "displayName": "Arknights:Endfield (Aggregated)",
+  "gameId": "aef",
+  "sources": [
+    {
+      "packId": "aef-skland",
+      "priority": 30,
+      "matchByName": true
+    },
+    {
+      "packId": "aef",
+      "priority": 20,
+      "matchByName": true
+    }
+  ]
+}
