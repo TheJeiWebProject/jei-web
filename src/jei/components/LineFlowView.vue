@@ -19,6 +19,7 @@
     :edges="edges"
     :selected-node-id="selectedNodeId"
     :item-defs-by-key-hash="itemDefsByKeyHash"
+    :line-width-scale="lineWidthScale"
     @update:selected-node-id="$emit('update:selected-node-id', $event)"
     @node-drag-stop="$emit('node-drag-stop', $event)"
   />
@@ -38,6 +39,7 @@ defineProps<{
   selectedNodeId: string | null;
   itemDefsByKeyHash: Record<string, ItemDef>;
   flowBackgroundPatternColor: string;
+  lineWidthScale: number;
 }>();
 
 defineEmits<{

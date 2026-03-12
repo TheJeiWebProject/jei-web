@@ -817,6 +817,7 @@
                 :selected-node-id="selectedLineNodeId"
                 :item-defs-by-key-hash="itemDefsByKeyHash"
                 :flow-background-pattern-color="flowBackgroundPatternColor"
+                :line-width-scale="settingsStore.productionLineG6Scale"
                 @update:selected-node-id="selectedLineNodeId = $event"
                 @node-drag-stop="onLineNodeDragStop"
               />
@@ -876,6 +877,7 @@
                 :belt-speed="beltSpeed"
                 :line-width-curve-config="lineWidthCurveConfig"
                 :line-width-scale="settingsStore.quantLineWidthScale"
+                :machine-count-decimals="settingsStore.machineCountDecimals"
               />
             </div>
             <div v-else class="text-center text-grey q-pa-lg">暂无节点</div>
@@ -2079,6 +2081,15 @@ function lineEdgeStrokeWidth(
   return base;
 }
 
+function formatMachineCountForDisplay(value: unknown): number {
+  const v = finiteOr(value, 0);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  const decimals = Math.max(0, Math.min(4, Math.floor(finiteOr(settingsStore.machineCountDecimals, 0))));
+  if (decimals === 0) return Math.round(v);
+  const factor = 10 ** decimals;
+  return Math.round(v * factor) / factor;
+}
+
 type GraphNodeData = {
   kind: 'item' | 'fluid';
   title: string;
@@ -2595,7 +2606,12 @@ const lineFlow = computed(() => {
         title,
         subtitle,
         ...(n.machineItemId ? { machineItemId: n.machineItemId } : {}),
-        ...(n.machineCount !== undefined ? { machineCount: Math.round(n.machineCount) } : {}),
+        ...(n.machineCount !== undefined
+          ? (() => {
+              const machineCount = formatMachineCountForDisplay(n.machineCount);
+              return machineCount > 0 ? { machineCount } : {};
+            })()
+          : {}),
         outputItemKey: n.outputItemKey,
         inPorts: 0,
         outPorts: 0,

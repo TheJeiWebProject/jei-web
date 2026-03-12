@@ -35,11 +35,13 @@ const props = withDefaults(
     beltSpeed: number;
     lineWidthCurveConfig: LineWidthCurveConfig;
     lineWidthScale: number;
+    machineCountDecimals: number;
   }>(),
   {
     widthByRate: true,
     beltSpeed: 1,
     lineWidthScale: 1,
+    machineCountDecimals: 2,
   },
 );
 
@@ -65,6 +67,17 @@ function finiteOr(v: unknown, fallback: number): number {
 function formatAmount(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 1000) / 1000;
+}
+
+function normalizedMachineCountDecimals(): number {
+  return Math.max(0, Math.min(4, Math.floor(finiteOr(props.machineCountDecimals, 0))));
+}
+
+function formatMachineCount(n: number): string {
+  const d = normalizedMachineCountDecimals();
+  const value = d === 0 ? Math.round(n) : Math.round(n * 10 ** d) / 10 ** d;
+  if (d === 0) return String(value);
+  return value.toFixed(d).replace(/\.?0+$/, '');
 }
 
 function displayRateFromAmount(amountPerMinute: number, unit: DisplayUnit): number {
@@ -406,11 +419,11 @@ function toGraphData(): GraphData {
         : 0;
     const targetMachineCount =
       Number.isFinite(targetMachineCountRaw) && targetMachineCountRaw > 0
-        ? Math.max(1, Math.round(targetMachineCountRaw))
-        : 0;
+        ? formatMachineCount(targetMachineCountRaw)
+        : '';
     const machineLabelName = targetMachineName || machineNameByItemId.get(targetMachineItemId) || targetMachineItemId;
     const machineLabel =
-      machineLabelName && targetMachineCount > 0 ? `${machineLabelName} x${targetMachineCount}` : '';
+      machineLabelName && targetMachineCount ? `${machineLabelName} x${targetMachineCount}` : '';
     const label = machineLabel ? `${rateLabel}\n${machineLabel}` : rateLabel;
     const edgeLineWidth = edgeBaseWidthFromRate(amount);
     return {
@@ -543,6 +556,7 @@ watch(
     props.displayUnit,
     props.widthByRate,
     props.lineWidthScale,
+    props.machineCountDecimals,
     props.beltSpeed,
     props.lineWidthCurveConfig,
     Dark.isActive,

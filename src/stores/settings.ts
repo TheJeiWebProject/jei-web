@@ -116,9 +116,11 @@ export const useSettingsStore = defineStore('settings', {
       packMirrorSelectionModeByPack: {} as Record<string, 'auto' | 'manual'>,
       packManualMirrorByPack: {} as Record<string, string>,
       showLoadingOverlay: true,
-      quantLineWidthScale: 4,
+      quantLineWidthScale: 2,
+      productionLineG6Scale: 2,
       productionLineRenderer: 'vue_flow' as 'vue_flow' | 'g6',
       lineIntermediateColoring: true,
+      machineCountDecimals: 2,
       pluginEnabledById: {} as Record<string, boolean>,
       pluginSettingsById: {} as Record<string, Record<string, string | number | boolean>>,
     };
@@ -283,6 +285,12 @@ export const useSettingsStore = defineStore('settings', {
             && parsed.quantLineWidthScale > 0
             ? parsed.quantLineWidthScale
             : defaults.quantLineWidthScale,
+        productionLineG6Scale:
+          typeof parsed.productionLineG6Scale === 'number'
+            && Number.isFinite(parsed.productionLineG6Scale)
+            && parsed.productionLineG6Scale > 0
+            ? parsed.productionLineG6Scale
+            : defaults.productionLineG6Scale,
         productionLineRenderer:
           parsed.productionLineRenderer === 'g6' || parsed.productionLineRenderer === 'vue_flow'
             ? parsed.productionLineRenderer
@@ -291,6 +299,12 @@ export const useSettingsStore = defineStore('settings', {
           typeof parsed.lineIntermediateColoring === 'boolean'
             ? parsed.lineIntermediateColoring
             : defaults.lineIntermediateColoring,
+        machineCountDecimals:
+          typeof parsed.machineCountDecimals === 'number'
+            && Number.isFinite(parsed.machineCountDecimals)
+            && parsed.machineCountDecimals >= 0
+            ? Math.max(0, Math.min(4, Math.floor(parsed.machineCountDecimals)))
+            : defaults.machineCountDecimals,
         pluginEnabledById:
           parsed.pluginEnabledById && typeof parsed.pluginEnabledById === 'object'
             ? Object.fromEntries(
@@ -497,12 +511,24 @@ export const useSettingsStore = defineStore('settings', {
       this.quantLineWidthScale = n;
       void this.save();
     },
+    setProductionLineG6Scale(value: number) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return;
+      this.productionLineG6Scale = n;
+      void this.save();
+    },
     setProductionLineRenderer(value: 'vue_flow' | 'g6') {
       this.productionLineRenderer = value === 'g6' ? 'g6' : 'vue_flow';
       void this.save();
     },
     setLineIntermediateColoring(value: boolean) {
       this.lineIntermediateColoring = value;
+      void this.save();
+    },
+    setMachineCountDecimals(value: number) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return;
+      this.machineCountDecimals = Math.max(0, Math.min(4, Math.floor(n)));
       void this.save();
     },
     setPluginEnabled(pluginId: string, enabled: boolean) {
@@ -559,8 +585,10 @@ export const useSettingsStore = defineStore('settings', {
         packManualMirrorByPack: this.packManualMirrorByPack,
         showLoadingOverlay: this.showLoadingOverlay,
         quantLineWidthScale: this.quantLineWidthScale,
+        productionLineG6Scale: this.productionLineG6Scale,
         productionLineRenderer: this.productionLineRenderer,
         lineIntermediateColoring: this.lineIntermediateColoring,
+        machineCountDecimals: this.machineCountDecimals,
         pluginEnabledById: this.pluginEnabledById,
         pluginSettingsById: this.pluginSettingsById,
       });
@@ -616,11 +644,25 @@ export const useSettingsStore = defineStore('settings', {
       ) {
         this.quantLineWidthScale = parsed.quantLineWidthScale;
       }
+      if (
+        typeof parsed.productionLineG6Scale === 'number'
+        && Number.isFinite(parsed.productionLineG6Scale)
+        && parsed.productionLineG6Scale > 0
+      ) {
+        this.productionLineG6Scale = parsed.productionLineG6Scale;
+      }
       if (parsed.productionLineRenderer === 'g6' || parsed.productionLineRenderer === 'vue_flow') {
         this.productionLineRenderer = parsed.productionLineRenderer;
       }
       if (typeof parsed.lineIntermediateColoring === 'boolean') {
         this.lineIntermediateColoring = parsed.lineIntermediateColoring;
+      }
+      if (
+        typeof parsed.machineCountDecimals === 'number'
+        && Number.isFinite(parsed.machineCountDecimals)
+        && parsed.machineCountDecimals >= 0
+      ) {
+        this.machineCountDecimals = Math.max(0, Math.min(4, Math.floor(parsed.machineCountDecimals)));
       }
       if (typeof parsed.circuitCollectionPreviewShowPieces === 'boolean') this.circuitCollectionPreviewShowPieces = parsed.circuitCollectionPreviewShowPieces;
       if (typeof parsed.circuitEditorPiecePanelSplitRatio === 'number') this.circuitEditorPiecePanelSplitRatio = parsed.circuitEditorPiecePanelSplitRatio;

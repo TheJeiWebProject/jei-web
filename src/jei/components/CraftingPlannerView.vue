@@ -767,6 +767,7 @@
                 :selected-node-id="selectedLineNodeId"
                 :item-defs-by-key-hash="itemDefsByKeyHash"
                 :flow-background-pattern-color="flowBackgroundPatternColor"
+                :line-width-scale="settingsStore.productionLineG6Scale"
                 @update:selected-node-id="selectedLineNodeId = $event"
                 @node-drag-stop="onLineNodeDragStop"
                 @item-click="emit('item-click', $event)"
@@ -856,6 +857,7 @@
                 :belt-speed="beltSpeed"
                 :line-width-curve-config="lineWidthCurveConfig"
                 :line-width-scale="settingsStore.quantLineWidthScale"
+                :machine-count-decimals="settingsStore.machineCountDecimals"
                 @item-click="emit('item-click', $event)"
                 @item-mouseenter="emit('item-mouseenter', $event)"
                 @item-mouseleave="emit('item-mouseleave')"
@@ -1785,6 +1787,15 @@ function lineEdgeStrokeWidth(
   return base;
 }
 
+function formatMachineCountForDisplay(value: unknown): number {
+  const v = finiteOr(value, 0);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  const decimals = Math.max(0, Math.min(4, Math.floor(finiteOr(settingsStore.machineCountDecimals, 0))));
+  if (decimals === 0) return Math.round(v);
+  const factor = 10 ** decimals;
+  return Math.round(v * factor) / factor;
+}
+
 function nodeBeltsText(node: RequirementNode | EnhancedRequirementNode): string {
   if (targetUnit.value === 'items') return '';
   if (node.kind !== 'item') return '';
@@ -2298,7 +2309,12 @@ const lineFlow = computed(() => {
         title,
         subtitle,
         ...(n.machineItemId ? { machineItemId: n.machineItemId } : {}),
-        ...(n.machineCount !== undefined ? { machineCount: Math.round(n.machineCount) } : {}),
+        ...(n.machineCount !== undefined
+          ? (() => {
+              const machineCount = formatMachineCountForDisplay(n.machineCount);
+              return machineCount > 0 ? { machineCount } : {};
+            })()
+          : {}),
         outputItemKey: n.outputItemKey,
         inPorts: 0,
         outPorts: 0,

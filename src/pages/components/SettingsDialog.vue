@@ -254,10 +254,50 @@
                       type="number"
                       :min="0.1"
                       :step="0.1"
-                      label="量化视图线宽缩放因子"
+                      label="量化图G6缩放因子"
                       :model-value="quantLineWidthScale"
                       @update:model-value="
                         $emit('update:quant-line-width-scale', Number($event) || 1)
+                      "
+                    />
+                    <q-input
+                      dense
+                      outlined
+                      type="number"
+                      :min="0.1"
+                      :step="0.1"
+                      label="生产线G6缩放因子"
+                      :model-value="productionLineG6Scale"
+                      @update:model-value="
+                        $emit('update:production-line-g6-scale', Number($event) || 1)
+                      "
+                    />
+                    <q-input
+                      dense
+                      outlined
+                      type="number"
+                      :min="0"
+                      :max="4"
+                      :step="1"
+                      label="机器数量小数位（0=取整）"
+                      :model-value="machineCountDecimals"
+                      @update:model-value="
+                        $emit('update:machine-count-decimals', Number($event) || 0)
+                      "
+                    />
+                    <q-select
+                      dense
+                      outlined
+                      emit-value
+                      map-options
+                      label="生产线渲染器"
+                      :options="[
+                        { label: 'VueFlow', value: 'vue_flow' },
+                        { label: 'G6', value: 'g6' },
+                      ]"
+                      :model-value="productionLineRenderer"
+                      @update:model-value="
+                        $emit('update:production-line-renderer', ($event as 'vue_flow' | 'g6') ?? 'vue_flow')
                       "
                     />
                     <q-toggle
@@ -584,7 +624,10 @@ const props = defineProps<{
   debugNavPanel: boolean;
   showLoadingOverlay: boolean;
   quantLineWidthScale: number;
+  productionLineG6Scale: number;
+  machineCountDecimals: number;
   lineIntermediateColoring: boolean;
+  productionLineRenderer: 'vue_flow' | 'g6';
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
   favoritesOpensNewStack: boolean;
@@ -646,7 +689,10 @@ const emit = defineEmits<{
   'update:debug-nav-panel': [value: boolean];
   'update:show-loading-overlay': [value: boolean];
   'update:quant-line-width-scale': [value: number];
+  'update:production-line-g6-scale': [value: number];
+  'update:machine-count-decimals': [value: number];
   'update:line-intermediate-coloring': [value: boolean];
+  'update:production-line-renderer': [value: 'vue_flow' | 'g6'];
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
   'update:recipe-slot-show-name': [value: boolean];
   'update:favorites-open-stack': [value: boolean];

@@ -17,9 +17,16 @@ type NodeDataRecord = {
   subtitle?: string;
   itemKey?: ItemKey;
   machineItemId?: string;
+  machineCount?: number;
   outputItemKey?: ItemKey;
   isRoot?: boolean;
   recovery?: boolean;
+};
+
+type EdgeDataRecord = {
+  kind?: 'item' | 'fluid';
+  itemKey?: ItemKey;
+  fluidId?: string;
 };
 
 const props = defineProps<{
@@ -27,6 +34,7 @@ const props = defineProps<{
   edges: Edge[];
   selectedNodeId: string | null;
   itemDefsByKeyHash: Record<string, ItemDef>;
+  lineWidthScale: number;
 }>();
 
 const emit = defineEmits<{
@@ -231,6 +239,15 @@ function nodeIconFromData(data: NodeDataRecord): string | undefined {
   return undefined;
 }
 
+function edgeItemName(data: EdgeDataRecord): string {
+  if (data.kind === 'item' && data.itemKey) {
+    const def = props.itemDefsByKeyHash[itemKeyHash(data.itemKey)];
+    return def?.name ?? data.itemKey.id;
+  }
+  if (data.kind === 'fluid' && data.fluidId) return data.fluidId;
+  return '';
+}
+
 type SelectionContext = {
   selectedId: string | null;
   downstreamNodeIds: Set<string>;
@@ -324,7 +341,11 @@ function toGraphData(): GraphData {
       n.type === 'lineMachineNode' ? 'machine' : n.type === 'lineFluidNode' ? 'fluid' : 'item';
     const icon = nodeIconFromData(data);
     const title = data.title ?? n.id;
-    const subtitle = data.subtitle ?? '';
+    const subtitleBase = data.subtitle ?? '';
+    const subtitle =
+      kind === 'machine' && typeof data.machineCount === 'number' && data.machineCount > 0
+        ? `${subtitleBase} x${data.machineCount}`
+        : subtitleBase;
     const itemColor =
       (data.itemKey ? itemColorOfDef(props.itemDefsByKeyHash[itemKeyHash(data.itemKey)]) : null) ??
       (data.outputItemKey
@@ -426,11 +447,15 @@ function toGraphData(): GraphData {
 
   const edges: EdgeData[] = props.edges.map((e) => {
     const style = (e.style ?? {}) as Record<string, unknown>;
-    const strokeWidth = Math.max(1, finiteOr(style.strokeWidth, 2));
+    const widthScale = Math.max(0.1, finiteOr(props.lineWidthScale, 1));
+    const strokeWidth = Math.max(1, finiteOr(style.strokeWidth, 2) * widthScale);
     const rawStroke = typeof style.stroke === 'string' ? style.stroke : undefined;
     const stroke = resolveCssColor(rawStroke, isDark ? '#9ca3af' : '#64748b');
     const opacity = Math.max(0.05, Math.min(1, finiteOr(style.opacity, 1)));
-    const label = typeof e.label === 'string' ? e.label : '';
+    const rateLabel = typeof e.label === 'string' ? e.label : '';
+    const edgeData = (e.data ?? {}) as EdgeDataRecord;
+    const itemName = edgeItemName(edgeData);
+    const label = itemName && rateLabel ? `${itemName} ${rateLabel}` : rateLabel;
     const lineDash = parseLineDash(style.strokeDasharray);
     return {
       id: e.id,
@@ -536,7 +561,14 @@ onMounted(() => {
 });
 
 watch(
-  () => [props.nodes, props.edges, props.selectedNodeId, props.itemDefsByKeyHash, Dark.isActive],
+  () => [
+    props.nodes,
+    props.edges,
+    props.selectedNodeId,
+    props.itemDefsByKeyHash,
+    props.lineWidthScale,
+    Dark.isActive,
+  ],
   () => {
     void renderGraph(false);
     void ensureResolvedIcons().then(() => renderGraph(false));
