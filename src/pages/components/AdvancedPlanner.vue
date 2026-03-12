@@ -127,10 +127,46 @@
               @update:model-value="(v) => setRecipeChoice(d.itemKeyHash, v as string)"
             >
               <template #option="scope">
-                <q-item v-bind="scope.itemProps">
+                <q-item v-bind="scope.itemProps" class="planner__recipe-option">
                   <q-item-section>
                     <q-item-label>{{ scope.opt.label }}</q-item-label>
+                    <div v-if="scope.opt.inputs?.length" class="planner__recipe-option-inputs">
+                      <stack-view
+                        v-for="(s, i) in scope.opt.inputs.slice(0, 8)"
+                        :key="`${scope.opt.value}:${i}`"
+                        :content="s"
+                        :item-defs-by-key-hash="itemDefsByKeyHash"
+                        variant="slot"
+                        :show-name="false"
+                        :show-subtitle="false"
+                      />
+                      <div
+                        v-if="scope.opt.inputs.length > 8"
+                        class="planner__recipe-option-more text-caption text-grey-6"
+                      >
+                        +{{ scope.opt.inputs.length - 8 }}
+                      </div>
+                    </div>
                   </q-item-section>
+                  <q-item-section side>
+                    <div class="text-caption text-grey-6">{{ scope.opt.value }}</div>
+                  </q-item-section>
+
+                  <q-tooltip max-width="720px">
+                    <q-card
+                      v-if="scope.opt.recipe && scope.opt.recipeType"
+                      flat
+                      bordered
+                      class="q-pa-sm"
+                    >
+                      <recipe-viewer
+                        :recipe="scope.opt.recipe"
+                        :recipe-type="scope.opt.recipeType"
+                        :item-defs-by-key-hash="itemDefsByKeyHash"
+                      />
+                    </q-card>
+                    <div v-else class="text-caption">{{ t('noRecipeDetails') }}</div>
+                  </q-tooltip>
                 </q-item>
               </template>
             </q-select>
@@ -1183,6 +1219,7 @@ import {
   buildEnhancedRequirementTree,
 } from 'src/jei/planner/planner';
 import StackView from 'src/jei/components/StackView.vue';
+import RecipeViewer from 'src/jei/components/RecipeViewer.vue';
 import LineWidthCurveEditor from 'src/jei/components/LineWidthCurveEditor.vue';
 import { buildProductionLineModel } from 'src/jei/planner/productionLine';
 import {
@@ -1283,15 +1320,7 @@ const lineFlowWrapEl = ref<HTMLElement | null>(null);
 const saveDialogOpen = ref(false);
 const saveName = ref('');
 
-const pendingDecisions = computed(() => {
-  return allDecisions.value.filter((d: PlannerDecision) => {
-    if (d.kind === 'item_recipe') {
-      return !selectedRecipeIdByItemKeyHash.value.has(d.itemKeyHash);
-    } else {
-      return !selectedItemIdByTagId.value.has(d.tagId);
-    }
-  });
-});
+const pendingDecisions = computed(() => allDecisions.value);
 
 const rawItemTotals = computed(() => {
   const totals = new Map<ItemId, number>();
@@ -1385,20 +1414,52 @@ const planningComplete = computed(() => {
   return planningStarted.value && pendingDecisions.value.length === 0;
 });
 
-// 当决策完成后，自动构建融合的需求树
-watch(planningComplete, (complete) => {
-  if (complete && props.pack && props.index) {
-    buildMergedTree();
+function collectPendingDecisions(): PlannerDecision[] {
+  if (!props.pack || !props.index || targets.value.length === 0) return [];
+
+  const collected: PlannerDecision[] = [];
+  for (const target of targets.value) {
+    try {
+      const decisions = computePlannerDecisions({
+        pack: props.pack,
+        index: props.index,
+        rootItemKey: target.itemKey,
+        selectedRecipeIdByItemKeyHash: selectedRecipeIdByItemKeyHash.value,
+        selectedItemIdByTagId: selectedItemIdByTagId.value,
+        forcedRawItemKeyHashes: forcedRawItemKeyHashes.value,
+        maxDepth: 20,
+      });
+      collected.push(...decisions);
+    } catch (e) {
+      console.error('Failed to compute decisions for', target.itemName, e);
+    }
   }
-});
+
+  const decisionsMap = new Map<string, PlannerDecision>();
+  for (const d of collected) {
+    const key = d.kind === 'item_recipe' ? d.itemKeyHash : `tag:${d.tagId}`;
+    if (!decisionsMap.has(key)) decisionsMap.set(key, d);
+  }
+  return Array.from(decisionsMap.values());
+}
+
+function recomputePlanningState(): void {
+  if (!planningStarted.value) return;
+  allDecisions.value = collectPendingDecisions();
+  if (allDecisions.value.length > 0) {
+    mergedTree.value = null;
+    mergedRootItemKey.value = null;
+    return;
+  }
+  buildMergedTree();
+}
 
 const forcedRawSignature = computed(() =>
   Array.from(forcedRawItemKeyHashes.value.values()).sort().join('|'),
 );
 
 watch(forcedRawSignature, () => {
-  if (!planningComplete.value) return;
-  buildMergedTree();
+  recomputePlanningState();
 });
 
 const buildMergedTree = () => {
@@ -1530,39 +1591,18 @@ const loadSavedPlan = (payload: PlannerSavePayload) => {
   );
   selectedItemIdByTagId.value = new Map(Object.entries(payload.selectedItemIdByTagId ?? {}));
 
-  // 重新生成决策列表，但保留选项
-  if (props.pack && props.index) {
-    const allDecisionsList: PlannerDecision[] = [];
-    for (const target of targets.value) {
-      try {
-        const decisions = computePlannerDecisions({
-          pack: props.pack,
-          index: props.index,
-          rootItemKey: target.itemKey,
-          selectedRecipeIdByItemKeyHash: selectedRecipeIdByItemKeyHash.value,
-          selectedItemIdByTagId: selectedItemIdByTagId.value,
-          forcedRawItemKeyHashes: forcedRawItemKeyHashes.value,
-          maxDepth: 20,
-        });
-        allDecisionsList.push(...decisions);
-      } catch (e) {
-        console.error('Failed to compute decisions for', target.itemName, e);
-      }
-    }
+  allDecisions.value = [];
+  mergedTree.value = null;
+  mergedRootItemKey.value = null;
+  collapsed.value = new Set();
 
-    const decisionsMap = new Map<string, PlannerDecision>();
-    for (const d of allDecisionsList) {
-      const key = d.kind === 'item_recipe' ? d.itemKeyHash : `tag:${d.tagId}`;
-      if (!decisionsMap.has(key)) decisionsMap.set(key, d);
-    }
-
-    allDecisions.value = Array.from(decisionsMap.values());
-    planningStarted.value = true;
-    mergedTree.value = null;
-    mergedRootItemKey.value = null;
-    collapsed.value = new Set();
-    if (pendingDecisions.value.length === 0) buildMergedTree();
+  if (!props.pack || !props.index) {
+    planningStarted.value = false;
+    return;
   }
+
+  planningStarted.value = true;
+  recomputePlanningState();
 };
 
 const removeTarget = (index: number) => {
@@ -1598,8 +1638,8 @@ const clearTargets = () => {
 const resetPlanning = () => {
   planningStarted.value = false;
   allDecisions.value = [];
-  selectedRecipeIdByItemKeyHash.value.clear();
-  selectedItemIdByTagId.value.clear();
+  selectedRecipeIdByItemKeyHash.value = new Map();
+  selectedItemIdByTagId.value = new Map();
   mergedTree.value = null;
   mergedRootItemKey.value = null;
   collapsed.value = new Set();
@@ -1612,45 +1652,15 @@ const invalidatePlanningIfNeeded = () => {
 const startPlanning = () => {
   if (!props.index || !props.pack || targets.value.length === 0) return;
 
-  // 重置状态
+  planningStarted.value = false;
   allDecisions.value = [];
-  selectedRecipeIdByItemKeyHash.value.clear();
-  selectedItemIdByTagId.value.clear();
+  selectedRecipeIdByItemKeyHash.value = new Map();
+  selectedItemIdByTagId.value = new Map();
   mergedTree.value = null;
   mergedRootItemKey.value = null;
   collapsed.value = new Set();
-
-  // 为所有目标收集决策
-  const allDecisionsList: PlannerDecision[] = [];
-
-  for (const target of targets.value) {
-    try {
-      const decisions = computePlannerDecisions({
-        pack: props.pack,
-        index: props.index,
-        rootItemKey: target.itemKey,
-        selectedRecipeIdByItemKeyHash: new Map(),
-        selectedItemIdByTagId: new Map(),
-        forcedRawItemKeyHashes: forcedRawItemKeyHashes.value,
-        maxDepth: 20,
-      });
-      allDecisionsList.push(...decisions);
-    } catch (e) {
-      console.error('Failed to compute decisions for', target.itemName, e);
-    }
-  }
-
-  // 去重决策（基于 itemKeyHash 或 tagId）
-  const decisionsMap = new Map<string, PlannerDecision>();
-  for (const d of allDecisionsList) {
-    const key = d.kind === 'item_recipe' ? d.itemKeyHash : `tag:${d.tagId}`;
-    if (!decisionsMap.has(key)) {
-      decisionsMap.set(key, d);
-    }
-  }
-
-  allDecisions.value = Array.from(decisionsMap.values());
   planningStarted.value = true;
+  recomputePlanningState();
 };
 
 const autoOptimize = () => {
@@ -1689,6 +1699,7 @@ const autoOptimize = () => {
   // 应用自动选择
   selectedRecipeIdByItemKeyHash.value = allRecipeSelections;
   selectedItemIdByTagId.value = allTagSelections;
+  recomputePlanningState();
 };
 
 const itemName = (itemKey: ItemKey): string => {
@@ -1763,11 +1774,17 @@ const getSelectedTag = (tagId: string): string | null => {
 };
 
 const setRecipeChoice = (itemKeyHash: string, recipeId: string) => {
-  selectedRecipeIdByItemKeyHash.value.set(itemKeyHash, recipeId);
+  const next = new Map(selectedRecipeIdByItemKeyHash.value);
+  next.set(itemKeyHash, recipeId);
+  selectedRecipeIdByItemKeyHash.value = next;
+  recomputePlanningState();
 };
 
 const setTagChoice = (tagId: string, itemId: string) => {
-  selectedItemIdByTagId.value.set(tagId, itemId);
+  const next = new Map(selectedItemIdByTagId.value);
+  next.set(tagId, itemId);
+  selectedItemIdByTagId.value = next;
+  recomputePlanningState();
 };
 
 function mapToRecord<V extends string>(m: Map<string, V>): Record<string, V> {
@@ -3531,6 +3548,17 @@ defineExpose({
 
 .decision-card {
   animation: fadeIn 0.3s ease-in;
+}
+
+.planner__recipe-option-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.planner__recipe-option-more {
+  align-self: center;
 }
 
 @keyframes fadeIn {
