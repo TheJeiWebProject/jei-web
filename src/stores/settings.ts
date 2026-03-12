@@ -119,6 +119,7 @@ export const useSettingsStore = defineStore('settings', {
       quantLineWidthScale: 2,
       productionLineG6Scale: 2,
       productionLineRenderer: 'vue_flow' as 'vue_flow' | 'g6',
+      quantFlowRenderer: 'nodes' as 'nodes' | 'sankey',
       lineIntermediateColoring: true,
       machineCountDecimals: 2,
       pluginEnabledById: {} as Record<string, boolean>,
@@ -295,6 +296,10 @@ export const useSettingsStore = defineStore('settings', {
           parsed.productionLineRenderer === 'g6' || parsed.productionLineRenderer === 'vue_flow'
             ? parsed.productionLineRenderer
             : defaults.productionLineRenderer,
+        quantFlowRenderer:
+          parsed.quantFlowRenderer === 'sankey' || parsed.quantFlowRenderer === 'nodes'
+            ? parsed.quantFlowRenderer
+            : defaults.quantFlowRenderer,
         lineIntermediateColoring:
           typeof parsed.lineIntermediateColoring === 'boolean'
             ? parsed.lineIntermediateColoring
@@ -521,6 +526,10 @@ export const useSettingsStore = defineStore('settings', {
       this.productionLineRenderer = value === 'g6' ? 'g6' : 'vue_flow';
       void this.save();
     },
+    setQuantFlowRenderer(value: 'nodes' | 'sankey') {
+      this.quantFlowRenderer = value === 'sankey' ? 'sankey' : 'nodes';
+      void this.save();
+    },
     setLineIntermediateColoring(value: boolean) {
       this.lineIntermediateColoring = value;
       void this.save();
@@ -587,6 +596,7 @@ export const useSettingsStore = defineStore('settings', {
         quantLineWidthScale: this.quantLineWidthScale,
         productionLineG6Scale: this.productionLineG6Scale,
         productionLineRenderer: this.productionLineRenderer,
+        quantFlowRenderer: this.quantFlowRenderer,
         lineIntermediateColoring: this.lineIntermediateColoring,
         machineCountDecimals: this.machineCountDecimals,
         pluginEnabledById: this.pluginEnabledById,
@@ -653,6 +663,9 @@ export const useSettingsStore = defineStore('settings', {
       }
       if (parsed.productionLineRenderer === 'g6' || parsed.productionLineRenderer === 'vue_flow') {
         this.productionLineRenderer = parsed.productionLineRenderer;
+      }
+      if (parsed.quantFlowRenderer === 'sankey' || parsed.quantFlowRenderer === 'nodes') {
+        this.quantFlowRenderer = parsed.quantFlowRenderer;
       }
       if (typeof parsed.lineIntermediateColoring === 'boolean') {
         this.lineIntermediateColoring = parsed.lineIntermediateColoring;

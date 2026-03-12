@@ -290,6 +290,21 @@
                       outlined
                       emit-value
                       map-options
+                      label="量化视图渲染模式"
+                      :options="[
+                        { label: '节点图', value: 'nodes' },
+                        { label: '桑基图', value: 'sankey' },
+                      ]"
+                      :model-value="quantFlowRenderer"
+                      @update:model-value="
+                        $emit('update:quant-flow-renderer', ($event as 'nodes' | 'sankey') ?? 'nodes')
+                      "
+                    />
+                    <q-select
+                      dense
+                      outlined
+                      emit-value
+                      map-options
                       label="生产线渲染器"
                       :options="[
                         { label: 'VueFlow', value: 'vue_flow' },
@@ -628,6 +643,7 @@ const props = defineProps<{
   machineCountDecimals: number;
   lineIntermediateColoring: boolean;
   productionLineRenderer: 'vue_flow' | 'g6';
+  quantFlowRenderer: 'nodes' | 'sankey';
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
   favoritesOpensNewStack: boolean;
@@ -693,6 +709,7 @@ const emit = defineEmits<{
   'update:machine-count-decimals': [value: number];
   'update:line-intermediate-coloring': [value: boolean];
   'update:production-line-renderer': [value: 'vue_flow' | 'g6'];
+  'update:quant-flow-renderer': [value: 'nodes' | 'sankey'];
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
   'update:recipe-slot-show-name': [value: boolean];
   'update:favorites-open-stack': [value: boolean];

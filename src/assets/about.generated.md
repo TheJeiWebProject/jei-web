@@ -1,16 +1,31 @@
 # About
 
 ## Build
-- Version: 7615769-dirty
-- Commit: 7615769 (7615769aadf6eacfd563f53b6d7b81fdb00c123d)
-- Commit count: 125
-- Subject: feat: add quantification view and related functionality
+- Version: fac9f72-dirty
+- Commit: fac9f72 (fac9f728c56bb84c8ab80b2daaf252a9df2f6918)
+- Commit count: 127
+- Subject: feat: 添加生产线G6缩放因子和机器数量小数位设置，优化相关组件
 - Author: AndreaFrederica
-- Date: 2026-03-13T04:24:59+08:00
-- Generated at: 2026-03-12T21:04:05.624Z
+- Date: 2026-03-13T05:42:26+08:00
+- Generated at: 2026-03-12T21:54:23.917Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r127 (2026-03-13T05:42:26+08:00)
+- fac9f72
+  feat: 添加生产线G6缩放因子和机器数量小数位设置，优化相关组件
+
+### r126 (2026-03-13T05:21:16+08:00)
+- 0838101
+  feat: add LineFlowView component with VueFlow and G6 rendering options
+  
+  - Introduced LineFlowView.vue to handle rendering of flow views using either VueFlow or G6.
+  - Created LineFlowVueFlowView.vue for VueFlow specific rendering logic.
+  - Updated IndexPage.vue to include new line intermediate coloring feature.
+  - Enhanced AdvancedPlanner.vue with options for line intermediate coloring and renderer selection.
+  - Refactored settings management in SettingsDialog.vue and settings store to accommodate new features.
+  - Added support for line intermediate coloring in the production line visualization.
 
 ### r125 (2026-03-13T04:24:59+08:00)
 - 7615769

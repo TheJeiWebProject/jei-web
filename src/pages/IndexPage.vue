@@ -190,6 +190,8 @@
       @update:line-intermediate-coloring="settingsStore.setLineIntermediateColoring($event)"
       :production-line-renderer="settingsStore.productionLineRenderer"
       @update:production-line-renderer="settingsStore.setProductionLineRenderer($event)"
+      :quant-flow-renderer="settingsStore.quantFlowRenderer"
+      @update:quant-flow-renderer="settingsStore.setQuantFlowRenderer($event)"
       :recipe-view-mode="settingsStore.recipeViewMode"
       @update:recipe-view-mode="settingsStore.setRecipeViewMode($event)"
       :recipe-slot-show-name="settingsStore.recipeSlotShowName"

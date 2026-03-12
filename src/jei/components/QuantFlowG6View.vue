@@ -195,9 +195,7 @@ function colorWithAlpha(color: string, alpha: number): string {
   if (hex) {
     const raw = hex[1]!;
     const normalized =
-      raw.length === 3
-        ? `${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}`
-        : raw;
+      raw.length === 3 ? `${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}` : raw;
     const r = Number.parseInt(normalized.slice(0, 2), 16);
     const g = Number.parseInt(normalized.slice(2, 4), 16);
     const b = Number.parseInt(normalized.slice(4, 6), 16);
@@ -213,10 +211,7 @@ function colorWithAlpha(color: string, alpha: number): string {
   return color;
 }
 
-function drawIconBackgroundCircle(
-  ctx: CanvasRenderingContext2D,
-  bgColor: string | null,
-) {
+function drawIconBackgroundCircle(ctx: CanvasRenderingContext2D, bgColor: string | null) {
   if (!bgColor) return;
   ctx.fillStyle = colorWithAlpha(bgColor, Dark.isActive ? 0.26 : 0.34);
   ctx.beginPath();
@@ -307,7 +302,8 @@ function toGraphData(): GraphData {
   const machineNameByItemId = new Map<string, string>();
   Object.values(props.itemDefsByKeyHash).forEach((def) => {
     if (!def?.key?.id) return;
-    if (!machineNameByItemId.has(def.key.id)) machineNameByItemId.set(def.key.id, def.name ?? def.key.id);
+    if (!machineNameByItemId.has(def.key.id))
+      machineNameByItemId.set(def.key.id, def.name ?? def.key.id);
   });
   const itemTintFill = (itemColor: string | null, isRoot: boolean): string => {
     if (itemColor) return colorWithAlpha(itemColor, isDark ? 0.2 : 0.25);
@@ -327,7 +323,9 @@ function toGraphData(): GraphData {
         ? itemColor
         : node.isRoot
           ? '#1976d2'
-          : (isDark ? '#6b7280' : '#9aa5b1');
+          : isDark
+            ? '#6b7280'
+            : '#9aa5b1';
       const resolvedIcon = resolvedIconByHash.value.get(hash);
       return {
         id: node.nodeId,
@@ -398,33 +396,45 @@ function toGraphData(): GraphData {
 
   const edges = props.model.edges.map((edge) => {
     const fluid = edge.kind === 'fluid';
+    const recovery = edge.kind === 'item' && edge.recovery;
     const edgeItemColor =
       edge.kind === 'item'
         ? itemColorOfDef(props.itemDefsByKeyHash[itemKeyHash(edge.itemKey)])
         : null;
-    const stroke = edgeItemColor ?? (fluid ? '#0ea5e9' : (Dark.isActive ? '#9ca3af' : '#6b7280'));
+    const stroke = recovery
+      ? '#26a69a'
+      : (edgeItemColor ?? (fluid ? '#0ea5e9' : Dark.isActive ? '#9ca3af' : '#6b7280'));
     const amount = finiteOr(edge.amount, 0);
     const rateLabel = `${formatAmount(displayRateFromAmount(amount, props.displayUnit))}${unitSuffix(props.displayUnit)}${edge.kind === 'fluid' ? (edge.unit ?? '') : ''}`;
+    const edgeMachineItemId = typeof edge.machineItemId === 'string' ? edge.machineItemId : '';
+    const edgeMachineName = typeof edge.machineName === 'string' ? edge.machineName : '';
+    const edgeMachineCountRaw = finiteOr(edge.machineCount, 0);
     const target = modelNodeMap.value.get(edge.target);
     const targetMachineItemId =
-      target?.kind === 'item' && typeof target.machineItemId === 'string' ? target.machineItemId : '';
+      target?.kind === 'item' && typeof target.machineItemId === 'string'
+        ? target.machineItemId
+        : '';
     const targetMachineName =
       target?.kind === 'item' && typeof target.machineName === 'string' ? target.machineName : '';
-    const targetMachineCountRaw =
-      target?.kind === 'item'
-        ? finiteOr(
-            target.machineCount,
-            0,
-          )
-        : 0;
+    const targetMachineCountRaw = target?.kind === 'item' ? finiteOr(target.machineCount, 0) : 0;
     const targetMachineCount =
       Number.isFinite(targetMachineCountRaw) && targetMachineCountRaw > 0
         ? formatMachineCount(targetMachineCountRaw)
         : '';
-    const machineLabelName = targetMachineName || machineNameByItemId.get(targetMachineItemId) || targetMachineItemId;
+    const edgeMachineCount =
+      Number.isFinite(edgeMachineCountRaw) && edgeMachineCountRaw > 0
+        ? formatMachineCount(edgeMachineCountRaw)
+        : '';
+    const machineItemId = edgeMachineItemId || targetMachineItemId;
+    const machineName = edgeMachineName || targetMachineName;
+    const machineCount = edgeMachineCount || targetMachineCount;
+    const machineLabelName = machineName || machineNameByItemId.get(machineItemId) || machineItemId;
     const machineLabel =
-      machineLabelName && targetMachineCount ? `${machineLabelName} x${targetMachineCount}` : '';
-    const label = machineLabel ? `${rateLabel}\n${machineLabel}` : rateLabel;
+      machineLabelName && machineCount ? `${machineLabelName} x${machineCount}` : '';
+    const labelCore = machineLabel ? `${rateLabel}\n${machineLabel}` : rateLabel;
+    const recoveryFirstLeg =
+      edge.kind === 'item' && !!(edge as { recoveryFirstLeg?: true }).recoveryFirstLeg;
+    const label = recoveryFirstLeg ? '副产物' : recovery ? `${labelCore}\nrecovery` : labelCore;
     const edgeLineWidth = edgeBaseWidthFromRate(amount);
     return {
       id: edge.id,
@@ -434,6 +444,7 @@ function toGraphData(): GraphData {
       style: {
         stroke,
         lineWidth: edgeLineWidth,
+        ...(recovery ? { lineDash: [6, 4] } : {}),
         curveOffset: 0,
         endArrow: true,
         endArrowFill: stroke,
@@ -453,9 +464,7 @@ function toGraphData(): GraphData {
 }
 
 function eventNodeId(event: unknown): string | null {
-  const evt = event as
-    | { target?: { id?: string }; data?: { id?: string } }
-    | undefined;
+  const evt = event as { target?: { id?: string }; data?: { id?: string } } | undefined;
   return evt?.target?.id ?? evt?.data?.id ?? null;
 }
 

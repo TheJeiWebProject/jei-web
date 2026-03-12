@@ -823,6 +823,20 @@
               </q-btn-group>
               <q-toggle v-model="quantShowFluids" dense :label="t('showFluids')" />
               <q-toggle v-model="quantWidthByRate" dense :label="t('lineWidthByRate')" />
+              <q-btn-toggle
+                dense
+                outlined
+                no-caps
+                toggle-color="primary"
+                :model-value="settingsStore.quantFlowRenderer"
+                :options="[
+                  { label: '节点图', value: 'nodes' },
+                  { label: '桑基图', value: 'sankey' },
+                ]"
+                @update:model-value="
+                  settingsStore.setQuantFlowRenderer(($event as 'nodes' | 'sankey') ?? 'nodes')
+                "
+              />
               <q-space />
               <q-btn
                 flat
@@ -849,7 +863,8 @@
               :class="{ 'planner__flow--fullscreen': quantFullscreen }"
               ref="quantFlowWrapEl"
             >
-              <quant-flow-g6-view
+              <quant-flow-view
+                :mode="settingsStore.quantFlowRenderer"
                 :model="quantModel"
                 :item-defs-by-key-hash="itemDefsByKeyHash"
                 :display-unit="targetUnit"
@@ -1179,7 +1194,7 @@ import '@vue-flow/minimap/dist/style.css';
 import RecipeViewer from './RecipeViewer.vue';
 import StackView from './StackView.vue';
 import LineWidthCurveEditor from './LineWidthCurveEditor.vue';
-import QuantFlowG6View from './QuantFlowG6View.vue';
+import QuantFlowView from './QuantFlowView.vue';
 import LineFlowView from './LineFlowView.vue';
 import { buildProductionLineModel } from 'src/jei/planner/productionLine';
 import { buildQuantFlowModel } from 'src/jei/planner/quantFlow';

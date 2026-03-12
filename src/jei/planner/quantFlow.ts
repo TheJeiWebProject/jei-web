@@ -33,6 +33,7 @@ export type QuantFlowEdge =
     itemKey: ItemKey;
     amount: number;
     recovery?: true;
+    recoveryFirstLeg?: true;
     machineItemId?: string;
     machineName?: string;
     machineCount?: number;
@@ -58,6 +59,7 @@ type QuantFlowEdgeInput =
     itemKey: ItemKey;
     amount: number;
     recovery?: true;
+    recoveryFirstLeg?: true;
     machineItemId?: string;
     machineName?: string;
     machineCount?: number;
@@ -73,6 +75,12 @@ type QuantFlowEdgeInput =
     machineName?: string;
     machineCount?: number;
   };
+
+type MachineMeta = {
+  machineItemId?: string;
+  machineName?: string;
+  machineCount?: number;
+};
 
 function finiteOr(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -110,7 +118,7 @@ export function buildQuantFlowModel(args: {
 
   const nodeMachineMeta = (
     node: Extract<AnyNode, { kind: 'item' }>,
-  ): { machineItemId?: string; machineName?: string; machineCount?: number } => {
+  ): MachineMeta => {
     const machineItemId =
       typeof (node as { machineItemId?: unknown }).machineItemId === 'string'
         ? (node as { machineItemId?: string }).machineItemId
@@ -142,8 +150,11 @@ export function buildQuantFlowModel(args: {
       itemByNodeKey.set(key, {
         itemKey: node.itemKey,
         amount: 0,
+        ...(node.recovery ? { recovery: true } : {}),
         ...(!node.recovery && rootHash === itemKeyHash(node.itemKey) ? { isRoot: true } : {}),
       });
+    } else if (node.recovery) {
+      prev.recovery = true;
     }
     return { key, nodeId };
   };
@@ -159,7 +170,7 @@ export function buildQuantFlowModel(args: {
   const addEdge = (edge: QuantFlowEdgeInput) => {
     const key =
       edge.kind === 'item'
-        ? `${edge.source}->${edge.target}:i:${itemKeyHash(edge.itemKey)}`
+        ? `${edge.source}->${edge.target}:i:${itemKeyHash(edge.itemKey)}:${edge.recoveryFirstLeg ? 'fl' : edge.recovery ? 'r' : 'n'}`
         : `${edge.source}->${edge.target}:f:${edge.fluidId}:${edge.unit ?? ''}`;
     const prev = edgeByKey.get(key);
     if (!prev) {
@@ -167,6 +178,9 @@ export function buildQuantFlowModel(args: {
       return;
     }
     prev.amount += edge.amount;
+    if (edge.kind === 'item' && edge.recovery) {
+      (prev as { recovery?: true }).recovery = true;
+    }
     const machineCount = finiteOr(edge.machineCount, 0);
     if (machineCount > 0) {
       const prevMachineCount = finiteOr(
@@ -182,6 +196,38 @@ export function buildQuantFlowModel(args: {
       (prev as { machineName?: string }).machineName = edge.machineName;
     }
   };
+
+  const recoverySourceKey = (recipeId: string, sourceItemKey: ItemKey, recipeTypeKey?: string) =>
+    `${recipeId}|${itemKeyHash(sourceItemKey)}|${recipeTypeKey ?? ''}`;
+  const sourceNodeIdsByRecoveryKey = new Map<string, string[]>();
+  const sourceQuantNodeIdByPlannerNodeId = new Map<string, string>();
+  const sourcePlannerNodeIdByQuantNodeId = new Map<string, string>();
+  const sourceMachineMetaByQuantNodeId = new Map<string, MachineMeta>();
+  const incomingItemSourcesByPlannerNodeId = new Map<string, Array<{ sourceNodeId: string; amount: number }>>();
+  const collectRecoverySources = (node: AnyNode) => {
+    if (node.kind !== 'item') return;
+    if (!node.recovery && node.recipeIdUsed) {
+      const key = recoverySourceKey(node.recipeIdUsed, node.itemKey, node.recipeTypeKeyUsed);
+      const sourceNodeId = `qi:${itemNodeKey(node)}`;
+      sourceQuantNodeIdByPlannerNodeId.set(node.nodeId, sourceNodeId);
+      sourcePlannerNodeIdByQuantNodeId.set(sourceNodeId, node.nodeId);
+      const machineMeta = nodeMachineMeta(node);
+      if (
+        machineMeta.machineItemId ||
+        machineMeta.machineName ||
+        machineMeta.machineCount !== undefined
+      ) {
+        sourceMachineMetaByQuantNodeId.set(sourceNodeId, machineMeta);
+      }
+      const bucket = sourceNodeIdsByRecoveryKey.get(key) ?? [];
+      if (!bucket.includes(sourceNodeId)) bucket.push(sourceNodeId);
+      sourceNodeIdsByRecoveryKey.set(key, bucket);
+    }
+    node.children.forEach((child) => {
+      if (child.kind === 'item') collectRecoverySources(child);
+    });
+  };
+  collectRecoverySources(args.root);
 
   const walk = (node: AnyNode) => {
     if (node.kind === 'item') {
@@ -217,13 +263,79 @@ export function buildQuantFlowModel(args: {
             target: self.nodeId,
             itemKey: child.itemKey,
             amount,
-            ...(child.recovery ? { recovery: true } : {}),
             ...(machineMeta.machineItemId ? { machineItemId: machineMeta.machineItemId } : {}),
             ...(machineMeta.machineName ? { machineName: machineMeta.machineName } : {}),
             ...(machineMeta.machineCount !== undefined
               ? { machineCount: machineMeta.machineCount }
               : {}),
           });
+          if (!child.recovery) {
+            const incoming = incomingItemSourcesByPlannerNodeId.get(node.nodeId) ?? [];
+            incoming.push({ sourceNodeId: childNode.nodeId, amount });
+            incomingItemSourcesByPlannerNodeId.set(node.nodeId, incoming);
+          }
+          if (
+            child.recovery &&
+            child.recoverySourceRecipeId &&
+            child.recoverySourceItemKey
+          ) {
+            const sourcePlannerNodeId =
+              typeof (child as { recoverySourceNodeId?: unknown }).recoverySourceNodeId === 'string'
+                ? (child as { recoverySourceNodeId: string }).recoverySourceNodeId
+                : '';
+            const key = recoverySourceKey(
+              child.recoverySourceRecipeId,
+              child.recoverySourceItemKey,
+              child.recoverySourceRecipeTypeKey,
+            );
+            const sourceCandidates = sourceNodeIdsByRecoveryKey.get(key) ?? [];
+            const sourceFromPlanner = sourcePlannerNodeId
+              ? sourceQuantNodeIdByPlannerNodeId.get(sourcePlannerNodeId)
+              : undefined;
+            const sourceNodeId =
+              (sourceFromPlanner && sourceFromPlanner !== self.nodeId
+                ? sourceFromPlanner
+                : undefined) ??
+              sourceCandidates.find((id) => id !== self.nodeId);
+            if (sourceNodeId && sourceNodeId !== self.nodeId) {
+              const sourceMachineMeta = sourceMachineMetaByQuantNodeId.get(sourceNodeId);
+              const sourceParentPlannerNodeId = sourcePlannerNodeIdByQuantNodeId.get(sourceNodeId);
+              const incomingSources = sourceParentPlannerNodeId
+                ? (incomingItemSourcesByPlannerNodeId.get(sourceParentPlannerNodeId) ?? [])
+                : [];
+              const firstLegSource = incomingSources
+                .slice()
+                .sort((a, b) => b.amount - a.amount)[0]?.sourceNodeId;
+              if (firstLegSource && firstLegSource !== sourceNodeId) {
+                addEdge({
+                  kind: 'item',
+                  source: firstLegSource,
+                  target: sourceNodeId,
+                  itemKey: child.itemKey,
+                  amount,
+                  recovery: true,
+                  recoveryFirstLeg: true,
+                });
+              }
+              addEdge({
+                kind: 'item',
+                source: sourceNodeId,
+                target: childNode.nodeId,
+                itemKey: child.itemKey,
+                amount,
+                recovery: true,
+                ...(sourceMachineMeta?.machineItemId
+                  ? { machineItemId: sourceMachineMeta.machineItemId }
+                  : {}),
+                ...(sourceMachineMeta?.machineName
+                  ? { machineName: sourceMachineMeta.machineName }
+                  : {}),
+                ...(sourceMachineMeta?.machineCount !== undefined
+                  ? { machineCount: sourceMachineMeta.machineCount }
+                  : {}),
+              });
+            }
+          }
         } else if (includeFluids) {
           const childFluid = ensureFluid(child.id, child.unit);
           const machineMeta = nodeMachineMeta(node);
