@@ -310,6 +310,48 @@ export function getActivePackBaseUrl(packId: string): string | null {
   return activePackBaseUrl.get(packId) ?? null;
 }
 
+function isAbsoluteLikeUrlOrPath(value: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(value);
+}
+
+function resolvePackAssetUrl(base: string, rawUrl: string): string {
+  const url = rawUrl.trim();
+  if (!url) return url;
+  if (isAbsoluteLikeUrlOrPath(url)) return url;
+  const cleanBase = base.replace(/\/+$/, '');
+  const cleanUrl = url.replace(/^\.\/+/, '');
+  return `${cleanBase}/${cleanUrl}`;
+}
+
+function resolveItemAssetUrls(item: ItemDef, base: string): void {
+  if (item.icon) item.icon = resolvePackAssetUrl(base, item.icon);
+  if (item.iconSprite?.url) {
+    item.iconSprite.url = resolvePackAssetUrl(base, item.iconSprite.url);
+  }
+}
+
+function resolveRecipeAssetUrls(recipe: Recipe, base: string): void {
+  recipe.inlineItems?.forEach((item) => resolveItemAssetUrls(item, base));
+}
+
+function resolveRecipeTypeAssetUrls(typeDef: RecipeTypeDef, base: string): void {
+  const machine = typeDef.machine;
+  const resolveMachine = (m: { icon?: string }) => {
+    if (m.icon) m.icon = resolvePackAssetUrl(base, m.icon);
+  };
+  if (Array.isArray(machine)) {
+    machine.forEach(resolveMachine);
+  } else if (machine) {
+    resolveMachine(machine);
+  }
+}
+
+function resolvePackAssetUrls(pack: PackData, base: string): void {
+  pack.items.forEach((item) => resolveItemAssetUrls(item, base));
+  pack.recipes.forEach((recipe) => resolveRecipeAssetUrls(recipe, base));
+  pack.recipeTypes.forEach((typeDef) => resolveRecipeTypeAssetUrls(typeDef, base));
+}
+
 function itemKeyHash(def: { key: { id: string; meta?: number | string; nbt?: unknown } }): string {
   return `${def.key.id}::${def.key.meta ?? ''}::${stableJsonStringify(def.key.nbt ?? null)}`;
 }
@@ -718,6 +760,8 @@ export async function loadRuntimePack(packIdOrLocal: string, onProgress?: Progre
 
     onProgress?.({ message: 'Parsing zip...', percent: 0.2 });
     const { pack, assets } = await zipToPackData(zipBlob);
+    const localBase = `/packs/${encodeURIComponent(pack.manifest.packId)}`;
+    resolvePackAssetUrls(pack, localBase);
 
     onProgress?.({ message: 'Processing assets...', percent: 0.8 });
     const result = resolveLocalPackAssetUrls(pack, assets);
@@ -869,6 +913,7 @@ export async function loadPack(packId: string, onProgress?: ProgressCallback): P
   };
   if (tags !== undefined) out.tags = tags;
   if (Object.keys(wikiData).length > 0) out.wiki = wikiData;
+  resolvePackAssetUrls(out, base);
   await ensurePackImageProxyTokens(manifest);
   applyImageProxyToPack(out);
   return out;
@@ -879,6 +924,7 @@ export async function loadPackItemDetail(packId: string, detailPath: string): Pr
   const normalizedPath = detailPath.replace(/^\/+/, '');
   const raw = await resolveDetailRaw(packId, base, normalizedPath, 'item detail');
   const item = assertItemDef(raw, '$.itemDetail');
+  resolveItemAssetUrls(item, base);
   const manifest = await loadManifest(packId);
   await ensurePackImageProxyTokens(manifest);
   applyImageProxyToItem(item as unknown as Record<string, unknown>, manifest);
@@ -925,6 +971,7 @@ export async function loadPackRecipeDetail(packId: string, detailPath: string): 
   const normalizedPath = detailPath.replace(/^\/+/, '');
   const raw = await resolveDetailRaw(packId, base, normalizedPath, 'recipe detail');
   const recipe = assertRecipe(raw, '$.recipeDetail');
+  resolveRecipeAssetUrls(recipe, base);
   recipe.detailPath = normalizedPath;
   recipe.detailLoaded = true;
   return recipe;

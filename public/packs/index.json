@@ -2,7 +2,10 @@
   "packs": [
     {
       "packId": "aef",
-      "label": "Arknights:Endfield"
+      "label": "Arknights:Endfield",
+      "mirrors": [
+        "https://aef.api.jeiweb.sirrus.cc/"
+      ]
     },
     {
       "packId": "aef-skland",
