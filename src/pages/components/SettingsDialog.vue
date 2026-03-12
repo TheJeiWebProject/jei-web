@@ -260,6 +260,11 @@
                         $emit('update:quant-line-width-scale', Number($event) || 1)
                       "
                     />
+                    <q-toggle
+                      label="中间产物着色（生产线）"
+                      :model-value="lineIntermediateColoring"
+                      @update:model-value="$emit('update:line-intermediate-coloring', !!$event)"
+                    />
                   </div>
                 </q-card-section>
               </q-card>
@@ -579,6 +584,7 @@ const props = defineProps<{
   debugNavPanel: boolean;
   showLoadingOverlay: boolean;
   quantLineWidthScale: number;
+  lineIntermediateColoring: boolean;
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
   favoritesOpensNewStack: boolean;
@@ -640,6 +646,7 @@ const emit = defineEmits<{
   'update:debug-nav-panel': [value: boolean];
   'update:show-loading-overlay': [value: boolean];
   'update:quant-line-width-scale': [value: number];
+  'update:line-intermediate-coloring': [value: boolean];
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
   'update:recipe-slot-show-name': [value: boolean];
   'update:favorites-open-stack': [value: boolean];

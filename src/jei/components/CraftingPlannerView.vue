@@ -697,6 +697,12 @@
               <q-toggle v-model="lineCollapseIntermediate" dense :label="t('hideIntermediate')" />
               <q-toggle v-model="lineWidthByRate" dense :label="t('lineWidthByRate')" />
               <q-toggle
+                :model-value="settingsStore.lineIntermediateColoring"
+                dense
+                label="中间产物着色"
+                @update:model-value="settingsStore.setLineIntermediateColoring(!!$event)"
+              />
+              <q-toggle
                 v-if="selectedLineItemData && !selectedLineItemData.isRoot && !selectedLineItemData.recovery"
                 :model-value="selectedLineItemForcedRaw"
                 dense
@@ -712,6 +718,20 @@
                 icon="tune"
                 :label="t('lineWidthEditCurve')"
                 @click="lineWidthCurveDialogOpen = true"
+              />
+              <q-btn-toggle
+                dense
+                outlined
+                no-caps
+                toggle-color="primary"
+                :model-value="settingsStore.productionLineRenderer"
+                :options="[
+                  { label: 'VueFlow', value: 'vue_flow' },
+                  { label: 'G6', value: 'g6' },
+                ]"
+                @update:model-value="
+                  settingsStore.setProductionLineRenderer(($event as 'vue_flow' | 'g6') ?? 'vue_flow')
+                "
               />
               <q-space />
               <q-btn
@@ -739,222 +759,20 @@
               :class="{ 'planner__flow--fullscreen': lineFullscreen }"
               ref="lineFlowWrapEl"
             >
-              <VueFlow
-                id="planner-line-flow"
+              <line-flow-view
+                flow-id="planner-line-flow"
+                :renderer="settingsStore.productionLineRenderer"
                 :nodes="lineFlowNodes"
                 :edges="lineFlowEdgesStyled"
-                :nodes-draggable="true"
-                :nodes-connectable="false"
-                :elements-selectable="true"
-                :zoom-on-double-click="false"
-                :min-zoom="0.2"
-                :max-zoom="2"
-                :pan-on-drag="true"
-                no-pan-class-name="nopan"
-                no-drag-class-name="nodrag"
-                @node-click="(evt) => (selectedLineNodeId = evt.node.id)"
-                @node-drag-start="(evt) => (selectedLineNodeId = evt.node.id)"
+                :selected-node-id="selectedLineNodeId"
+                :item-defs-by-key-hash="itemDefsByKeyHash"
+                :flow-background-pattern-color="flowBackgroundPatternColor"
+                @update:selected-node-id="selectedLineNodeId = $event"
                 @node-drag-stop="onLineNodeDragStop"
-                @pane-click="() => (selectedLineNodeId = null)"
-              >
-                <Background :gap="20" :pattern-color="flowBackgroundPatternColor" />
-                <Controls />
-                <MiniMap />
-                <template #node-lineItemNode="p">
-                  <div
-                    class="planner__flow-node nopan"
-                    :class="{
-                      'planner__flow-node--selected': selectedLineNodeId === p.id,
-                      'planner__flow-node--recovery': p.data.recovery,
-                    }"
-                    @click.stop="selectedLineNodeId = p.id"
-                  >
-                    <Handle
-                      v-for="i in p.data.inPorts"
-                      :id="`t${i - 1}`"
-                      :key="`t${i - 1}`"
-                      type="target"
-                      :position="Position.Left"
-                      class="planner__handle"
-                      :style="{ top: `${(i / (p.data.inPorts + 1)) * 100}%` }"
-                    />
-                    <Handle
-                      v-for="i in p.data.outPorts"
-                      :id="`s${i - 1}`"
-                      :key="`s${i - 1}`"
-                      type="source"
-                      :position="Position.Right"
-                      class="planner__handle"
-                      :style="{ top: `${(i / (p.data.outPorts + 1)) * 100}%` }"
-                    />
-                    <div
-                      class="planner__flow-node-icon cursor-pointer"
-                      @click="emit('item-click', p.data.itemKey)"
-                    >
-                      <stack-view
-                        class="nopan"
-                        :content="{
-                          kind: 'item',
-                          id: p.data.itemKey.id,
-                          amount: 1,
-                          ...(p.data.itemKey.meta !== undefined
-                            ? { meta: p.data.itemKey.meta }
-                            : {}),
-                          ...(p.data.itemKey.nbt !== undefined ? { nbt: p.data.itemKey.nbt } : {}),
-                        }"
-                        :item-defs-by-key-hash="itemDefsByKeyHash"
-                        variant="slot"
-                        :show-name="false"
-                        :show-subtitle="false"
-                        @item-mouseenter="emit('item-mouseenter', $event)"
-                        @item-mouseleave="emit('item-mouseleave')"
-                      />
-                    </div>
-                    <div
-                      class="planner__flow-node-text"
-                      @click.stop="selectedLineNodeId = p.id"
-                      @dblclick.stop
-                    >
-                      <div class="planner__flow-node-title">{{ p.data.title }}</div>
-                      <div class="planner__flow-node-sub">
-                        {{ p.data.subtitle }}
-                        <q-badge v-if="p.data.isRoot" color="primary" class="q-ml-xs">目标</q-badge>
-                        <q-badge v-if="p.data.recovery" color="teal" class="q-ml-xs">
-                          回收
-                          <q-tooltip v-if="p.data.recoverySource">{{ p.data.recoverySource }}</q-tooltip>
-                        </q-badge>
-                        <q-badge v-if="p.data.forcedRaw" color="warning" class="q-ml-xs">
-                          原料
-                        </q-badge>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <template #node-lineMachineNode="p">
-                  <div
-                    class="planner__flow-node planner__flow-node--machine nopan"
-                    :class="{ 'planner__flow-node--selected': selectedLineNodeId === p.id }"
-                    @click.stop="selectedLineNodeId = p.id"
-                  >
-                    <Handle
-                      v-for="i in p.data.inPorts"
-                      :id="`t${i - 1}`"
-                      :key="`t${i - 1}`"
-                      type="target"
-                      :position="Position.Left"
-                      class="planner__handle"
-                      :style="{
-                        top:
-                          p.data.inPorts === 1 ? '50%' : `${((i - 0.5) / p.data.inPorts) * 100}%`,
-                      }"
-                    />
-                    <Handle
-                      v-for="i in p.data.outPorts"
-                      :id="`s${i - 1}`"
-                      :key="`s${i - 1}`"
-                      type="source"
-                      :position="Position.Right"
-                      class="planner__handle"
-                      :style="{
-                        top:
-                          p.data.outPorts === 1 ? '50%' : `${((i - 0.5) / p.data.outPorts) * 100}%`,
-                      }"
-                    />
-                    <div class="planner__flow-node-icon">
-                      <stack-view
-                        v-if="p.data.machineItemId"
-                        class="nopan"
-                        :content="{ kind: 'item', id: p.data.machineItemId, amount: 1 }"
-                        :item-defs-by-key-hash="itemDefsByKeyHash"
-                        variant="slot"
-                        :show-name="false"
-                        :show-subtitle="false"
-                        @item-mouseenter="emit('item-mouseenter', $event)"
-                        @item-mouseleave="emit('item-mouseleave')"
-                      />
-                      <div v-else class="planner__flow-node-icon-fallback">M</div>
-                    </div>
-                    <div
-                      class="planner__flow-node-text"
-                      @click.stop="selectedLineNodeId = p.id"
-                      @dblclick.stop
-                    >
-                      <div class="planner__flow-node-title">{{ p.data.title }}</div>
-                      <div class="planner__flow-node-sub">
-                        {{ p.data.subtitle }}
-                        <q-badge v-if="p.data.machineCount" color="accent" class="q-ml-xs">
-                          x{{ p.data.machineCount }}
-                        </q-badge>
-                      </div>
-                    </div>
-                    <div
-                      class="planner__flow-node-icon cursor-pointer"
-                      @click="emit('item-click', p.data.outputItemKey)"
-                    >
-                      <stack-view
-                        class="nopan"
-                        :content="{
-                          kind: 'item',
-                          id: p.data.outputItemKey.id,
-                          amount: 1,
-                          ...(p.data.outputItemKey.meta !== undefined
-                            ? { meta: p.data.outputItemKey.meta }
-                            : {}),
-                          ...(p.data.outputItemKey.nbt !== undefined
-                            ? { nbt: p.data.outputItemKey.nbt }
-                            : {}),
-                        }"
-                        :item-defs-by-key-hash="itemDefsByKeyHash"
-                        variant="slot"
-                        :show-name="false"
-                        :show-subtitle="false"
-                        @item-mouseenter="emit('item-mouseenter', $event)"
-                        @item-mouseleave="emit('item-mouseleave')"
-                      />
-                    </div>
-                  </div>
-                </template>
-                <template #node-lineFluidNode="p">
-                  <div
-                    class="planner__flow-node planner__flow-node--fluid nopan"
-                    :class="{ 'planner__flow-node--selected': selectedLineNodeId === p.id }"
-                    @click.stop="selectedLineNodeId = p.id"
-                  >
-                    <Handle
-                      v-for="i in p.data.inPorts"
-                      :id="`t${i - 1}`"
-                      :key="`t${i - 1}`"
-                      type="target"
-                      :position="Position.Left"
-                      class="planner__handle"
-                      :style="{
-                        top:
-                          p.data.inPorts === 1 ? '50%' : `${((i - 0.5) / p.data.inPorts) * 100}%`,
-                      }"
-                    />
-                    <Handle
-                      v-for="i in p.data.outPorts"
-                      :id="`s${i - 1}`"
-                      :key="`s${i - 1}`"
-                      type="source"
-                      :position="Position.Right"
-                      class="planner__handle"
-                      :style="{
-                        top:
-                          p.data.outPorts === 1 ? '50%' : `${((i - 0.5) / p.data.outPorts) * 100}%`,
-                      }"
-                    />
-                    <div
-                      class="planner__flow-node-text"
-                      @click.stop="selectedLineNodeId = p.id"
-                      @dblclick.stop
-                    >
-                      <div class="planner__flow-node-title">{{ p.data.title }}</div>
-                      <div class="planner__flow-node-sub">{{ p.data.subtitle }}</div>
-                    </div>
-                  </div>
-                </template>
-              </VueFlow>
+                @item-click="emit('item-click', $event)"
+                @item-mouseenter="emit('item-mouseenter', $event)"
+                @item-mouseleave="emit('item-mouseleave')"
+              />
             </div>
           </div>
         </div>
@@ -1350,7 +1168,7 @@ import type { JeiIndex } from 'src/jei/indexing/buildIndex';
 import { itemKeyHash } from 'src/jei/indexing/key';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
-import { VueFlow, type Edge, type Node, Handle, MarkerType, Position } from '@vue-flow/core';
+import { VueFlow, type Edge, type Node, MarkerType } from '@vue-flow/core';
 import { MiniMap } from '@vue-flow/minimap';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -1360,6 +1178,7 @@ import RecipeViewer from './RecipeViewer.vue';
 import StackView from './StackView.vue';
 import LineWidthCurveEditor from './LineWidthCurveEditor.vue';
 import QuantFlowG6View from './QuantFlowG6View.vue';
+import LineFlowView from './LineFlowView.vue';
 import { buildProductionLineModel } from 'src/jei/planner/productionLine';
 import { buildQuantFlowModel } from 'src/jei/planner/quantFlow';
 import {
@@ -1678,6 +1497,16 @@ function decisionKey(d: PlannerDecision) {
 function itemName(key: ItemKey) {
   const def = props.itemDefsByKeyHash[itemKeyHash(key)];
   return def?.name ?? key.id;
+}
+
+function itemColorOfDef(def?: ItemDef): string | null {
+  const fromDef = (def as { color?: string } | undefined)?.color?.trim();
+  if (fromDef) return fromDef;
+  const fromRarity = def?.rarity?.color?.trim();
+  if (fromRarity) return fromRarity;
+  const fromSprite = def?.iconSprite?.color?.trim();
+  if (fromSprite) return fromSprite;
+  return null;
 }
 
 function recoverySourceText(node: {
@@ -2389,6 +2218,12 @@ type LineFlowFluidData = {
   inPorts: number;
   outPorts: number;
 };
+type LineFlowEdgeData = {
+  kind: 'item' | 'fluid';
+  itemKey?: ItemKey;
+  fluidId?: string;
+  recovery?: boolean;
+};
 
 const lineFlow = computed(() => {
   const result = enhancedTreeResult.value || treeResult.value;
@@ -2488,6 +2323,11 @@ const lineFlow = computed(() => {
         strokeWidth: lineEdgeBaseWidthFromRate(e.amount),
         ...(recovery ? { stroke: '#26a69a', strokeDasharray: '6 4' } : {}),
       },
+      data: {
+        kind: e.kind,
+        ...(e.kind === 'item' ? { itemKey: e.itemKey } : { fluidId: e.fluidId }),
+        ...(recovery ? { recovery: true } : {}),
+      } satisfies LineFlowEdgeData,
       markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 10,
@@ -2925,6 +2765,15 @@ function setSelectedLineItemForcedRaw(forced: boolean) {
   setForcedRawForKey(node.itemKey, forced);
 }
 const lineFlowEdges = computed(() => lineFlow.value.edges);
+function lineEdgeBaseStroke(edge: Edge): string | null {
+  const data = (edge.data ?? {}) as Partial<LineFlowEdgeData>;
+  if (data.kind === 'fluid') return '#0ea5e9';
+  if (data.kind === 'item' && data.itemKey) {
+    const color = itemColorOfDef(props.itemDefsByKeyHash[itemKeyHash(data.itemKey)]);
+    if (color) return color;
+  }
+  return null;
+}
 const lineFlowEdgesStyled = computed(() => {
   const selectedId = selectedLineNodeId.value;
   const edges = lineFlowEdges.value;
@@ -2934,6 +2783,12 @@ const lineFlowEdgesStyled = computed(() => {
       ...edge,
       style: {
         ...(edge.style ?? {}),
+        ...(settingsStore.lineIntermediateColoring
+          ? (() => {
+              const stroke = lineEdgeBaseStroke(edge);
+              return stroke ? { stroke } : {};
+            })()
+          : {}),
         strokeWidth: lineEdgeStrokeWidth(edge, 'normal'),
       },
       ...(edge.zIndex !== undefined ? { zIndex: edge.zIndex } : {}),

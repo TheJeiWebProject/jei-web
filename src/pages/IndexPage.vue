@@ -182,6 +182,8 @@
       @update:show-loading-overlay="settingsStore.setShowLoadingOverlay($event)"
       :quant-line-width-scale="settingsStore.quantLineWidthScale"
       @update:quant-line-width-scale="settingsStore.setQuantLineWidthScale($event)"
+      :line-intermediate-coloring="settingsStore.lineIntermediateColoring"
+      @update:line-intermediate-coloring="settingsStore.setLineIntermediateColoring($event)"
       :recipe-view-mode="settingsStore.recipeViewMode"
       @update:recipe-view-mode="settingsStore.setRecipeViewMode($event)"
       :recipe-slot-show-name="settingsStore.recipeSlotShowName"

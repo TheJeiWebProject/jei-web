@@ -117,6 +117,8 @@ export const useSettingsStore = defineStore('settings', {
       packManualMirrorByPack: {} as Record<string, string>,
       showLoadingOverlay: true,
       quantLineWidthScale: 4,
+      productionLineRenderer: 'vue_flow' as 'vue_flow' | 'g6',
+      lineIntermediateColoring: true,
       pluginEnabledById: {} as Record<string, boolean>,
       pluginSettingsById: {} as Record<string, Record<string, string | number | boolean>>,
     };
@@ -281,6 +283,14 @@ export const useSettingsStore = defineStore('settings', {
             && parsed.quantLineWidthScale > 0
             ? parsed.quantLineWidthScale
             : defaults.quantLineWidthScale,
+        productionLineRenderer:
+          parsed.productionLineRenderer === 'g6' || parsed.productionLineRenderer === 'vue_flow'
+            ? parsed.productionLineRenderer
+            : defaults.productionLineRenderer,
+        lineIntermediateColoring:
+          typeof parsed.lineIntermediateColoring === 'boolean'
+            ? parsed.lineIntermediateColoring
+            : defaults.lineIntermediateColoring,
         pluginEnabledById:
           parsed.pluginEnabledById && typeof parsed.pluginEnabledById === 'object'
             ? Object.fromEntries(
@@ -487,6 +497,14 @@ export const useSettingsStore = defineStore('settings', {
       this.quantLineWidthScale = n;
       void this.save();
     },
+    setProductionLineRenderer(value: 'vue_flow' | 'g6') {
+      this.productionLineRenderer = value === 'g6' ? 'g6' : 'vue_flow';
+      void this.save();
+    },
+    setLineIntermediateColoring(value: boolean) {
+      this.lineIntermediateColoring = value;
+      void this.save();
+    },
     setPluginEnabled(pluginId: string, enabled: boolean) {
       this.pluginEnabledById = {
         ...this.pluginEnabledById,
@@ -541,6 +559,8 @@ export const useSettingsStore = defineStore('settings', {
         packManualMirrorByPack: this.packManualMirrorByPack,
         showLoadingOverlay: this.showLoadingOverlay,
         quantLineWidthScale: this.quantLineWidthScale,
+        productionLineRenderer: this.productionLineRenderer,
+        lineIntermediateColoring: this.lineIntermediateColoring,
         pluginEnabledById: this.pluginEnabledById,
         pluginSettingsById: this.pluginSettingsById,
       });
@@ -595,6 +615,12 @@ export const useSettingsStore = defineStore('settings', {
         && parsed.quantLineWidthScale > 0
       ) {
         this.quantLineWidthScale = parsed.quantLineWidthScale;
+      }
+      if (parsed.productionLineRenderer === 'g6' || parsed.productionLineRenderer === 'vue_flow') {
+        this.productionLineRenderer = parsed.productionLineRenderer;
+      }
+      if (typeof parsed.lineIntermediateColoring === 'boolean') {
+        this.lineIntermediateColoring = parsed.lineIntermediateColoring;
       }
       if (typeof parsed.circuitCollectionPreviewShowPieces === 'boolean') this.circuitCollectionPreviewShowPieces = parsed.circuitCollectionPreviewShowPieces;
       if (typeof parsed.circuitEditorPiecePanelSplitRatio === 'number') this.circuitEditorPiecePanelSplitRatio = parsed.circuitEditorPiecePanelSplitRatio;

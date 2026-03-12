@@ -1,16 +1,28 @@
 # About
 
 ## Build
-- Version: abd98d6-dirty
-- Commit: abd98d6 (abd98d654fa86937e39793efe70d72dfd2ddfd94)
-- Commit count: 124
-- Subject: feat(planner): add product recovery feature to planner state and UI
+- Version: 7615769-dirty
+- Commit: 7615769 (7615769aadf6eacfd563f53b6d7b81fdb00c123d)
+- Commit count: 125
+- Subject: feat: add quantification view and related functionality
 - Author: AndreaFrederica
-- Date: 2026-03-13T02:26:07+08:00
-- Generated at: 2026-03-12T19:20:02.623Z
+- Date: 2026-03-13T04:24:59+08:00
+- Generated at: 2026-03-12T21:04:05.624Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r125 (2026-03-13T04:24:59+08:00)
+- 7615769
+  feat: add quantification view and related functionality
+  
+  - Introduced a new quantification view in the planner with a dedicated tab.
+  - Implemented the quantification model in `quantFlow.ts` to handle item and fluid nodes and edges.
+  - Enhanced the `IndexPage.vue` to support quantification settings and key bindings.
+  - Updated `AdvancedPlanner.vue` to include UI components for the quantification view.
+  - Added settings for quantification line width scaling in `SettingsDialog.vue`.
+  - Modified key bindings to include shortcuts for the quantification view.
+  - Updated relevant components to accommodate the new quantification features and ensure proper data flow.
 
 ### r124 (2026-03-13T02:26:07+08:00)
 - abd98d6
