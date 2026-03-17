@@ -1,16 +1,20 @@
 # About
 
 ## Build
-- Version: 57cb40d-dirty
-- Commit: 57cb40d (57cb40dad555109d61a07f58552648be37e743f5)
-- Commit count: 129
-- Subject: feat(planner): implement advanced objective entries and recipe normalization
+- Version: 36b8663-dirty
+- Commit: 36b8663 (36b86637007043f010f7a3aca563915b63368d70)
+- Commit count: 130
+- Subject: fix: 修复了多产物合成的正确表达和计算 但是lp模式仍存在部分问题 需要修复（lp的某些循环计算可能有bug 需要谨慎对待）
 - Author: AndreaFrederica
-- Date: 2026-03-14T04:18:50+08:00
-- Generated at: 2026-03-17T07:42:29.846Z
+- Date: 2026-03-17T18:36:15+08:00
+- Generated at: 2026-03-17T13:09:29.019Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r130 (2026-03-17T18:36:15+08:00)
+- 36b8663
+  fix: 修复了多产物合成的正确表达和计算 但是lp模式仍存在部分问题 需要修复（lp的某些循环计算可能有bug 需要谨慎对待）
 
 ### r129 (2026-03-14T04:18:50+08:00)
 - 57cb40d

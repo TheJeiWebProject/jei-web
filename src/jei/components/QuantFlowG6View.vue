@@ -8,7 +8,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Dark } from 'quasar';
 import { Graph } from '@antv/g6';
-import type { GraphData } from '@antv/g6';
+import type { EdgeData, GraphData } from '@antv/g6';
 import type { ItemDef, ItemKey } from 'src/jei/types';
 import type { QuantFlowEdge, QuantFlowNode } from 'src/jei/planner/quantFlow';
 import { itemKeyHash } from 'src/jei/indexing/key';
@@ -394,7 +394,7 @@ function toGraphData(): GraphData {
     };
   });
 
-  const edges = props.model.edges.map((edge) => {
+  const edges: EdgeData[] = props.model.edges.map((edge) => {
     const fluid = edge.kind === 'fluid';
     const recovery = edge.kind === 'item' && edge.recovery;
     const edgeItemColor =
