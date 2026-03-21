@@ -236,6 +236,7 @@
           label: s.label,
         }))
       "
+      :use-dev-pack-mirrors="settingsStore.useDevPackMirrors"
       :pack-mirrors="activePackMirrorRows"
       :active-pack-mirror-url="activePackMirrorUrl"
       :pack-mirror-selection-mode="activePackMirrorMode"
@@ -244,6 +245,7 @@
       @add-custom-source="onAddCustomSource"
       @remove-custom-source="onRemoveCustomSource"
       @refresh-pack-cache="onRefreshPackCache"
+      @update:use-dev-pack-mirrors="onUpdateUseDevPackMirrors"
       @update:pack-mirror-selection-mode="onUpdatePackMirrorSelectionMode"
       @update:pack-manual-mirror="onUpdatePackManualMirror"
       @update:plugin-enabled="onPluginEnabledChange"
@@ -327,6 +329,7 @@ import {
   loadPackRecipeDetail,
   loadRuntimePack,
   registerPackSource,
+  setPackDevMirrorsEnabled,
   setPackMirrorLatencyHint,
   setPackMirrorPreference,
   type LoadProgress,
@@ -585,6 +588,7 @@ type MirrorRouteEntry = {
   sourcePackId: string;
   sourceLabel: string;
   url: string;
+  isDev: boolean;
 };
 
 function buildMirrorRouteEntriesForPack(packId: string): MirrorRouteEntry[] {
@@ -596,14 +600,22 @@ function buildMirrorRouteEntriesForPack(packId: string): MirrorRouteEntry[] {
     if (sourcePackId.startsWith('local:')) return;
     const mode = settingsStore.packMirrorSelectionModeByPack[sourcePackId] ?? 'auto';
     const manual = settingsStore.packManualMirrorByPack[sourcePackId];
-    const mirrors = packRoutingRuntimeStore.getMirrorsForPack(sourcePackId, mode, manual);
+    const source = packRoutingRuntimeStore.sourcesByPack[sourcePackId];
+    const devMirrors = new Set(source?.devMirrors ?? []);
+    const mirrors = packRoutingRuntimeStore.getMirrorsForPack(
+      sourcePackId,
+      mode,
+      manual,
+      settingsStore.useDevPackMirrors,
+    );
     const resolvedMirrors = mirrors.length > 0 ? mirrors : getPackBaseUrls(sourcePackId);
-    const sourceLabel = packRoutingRuntimeStore.sourcesByPack[sourcePackId]?.label ?? sourcePackId;
+    const sourceLabel = source?.label ?? sourcePackId;
     resolvedMirrors.forEach((url) => {
       out.push({
         sourcePackId,
         sourceLabel,
         url,
+        isDev: settingsStore.useDevPackMirrors && devMirrors.has(url),
       });
     });
   });
@@ -631,6 +643,7 @@ const activePackMirrorRows = computed(() =>
     sourcePackId: entry.sourcePackId,
     sourceLabel: entry.sourceLabel,
     url: entry.url,
+    isDev: entry.isDev,
     latencyMs: packRoutingRuntimeStore.getLatency(entry.sourcePackId, entry.url),
   })),
 );
@@ -1896,6 +1909,13 @@ watch(
   },
 );
 watch(
+  () => settingsStore.useDevPackMirrors,
+  (enabled) => {
+    setPackDevMirrorsEnabled(enabled);
+  },
+  { immediate: true },
+);
+watch(
   () =>
     [
       settingsStore.packImageProxyUsePackProvided,
@@ -2024,6 +2044,7 @@ async function loadPacksIndex() {
         packId: string;
         label: string;
         mirrors?: string[];
+        devMirrors?: string[];
         aggregateDescriptor?: string;
       }>;
     };
@@ -2038,6 +2059,7 @@ async function loadPacksIndex() {
       const remoteSources: Record<string, PackSourceSnapshot> = {};
       const remote = data.packs.map((p) => {
         const mirrors = normalizeMirrorUrls(p.mirrors ?? []);
+        const devMirrors = normalizeMirrorUrls(p.devMirrors ?? []);
         const aggregateDescriptor =
           typeof p.aggregateDescriptor === 'string' && p.aggregateDescriptor.trim().length > 0
             ? p.aggregateDescriptor.trim()
@@ -2051,11 +2073,13 @@ async function loadPacksIndex() {
         remoteSources[p.packId] = {
           label: p.label,
           mirrors: effectiveMirrors,
+          devMirrors,
         };
         registerPackSource({
           packId: p.packId,
           label: p.label,
           mirrors: effectiveMirrors,
+          ...(devMirrors.length > 0 ? { devMirrors } : {}),
           ...(aggregateDescriptor ? { aggregateDescriptor } : {}),
         });
         return { label: p.label, value: p.packId };
@@ -2183,6 +2207,19 @@ async function onUpdatePackMirrorSelectionMode(mode: 'auto' | 'manual') {
     if (first) settingsStore.setPackManualMirror(activePackId.value, first);
   }
   applyMirrorPreference(activePackId.value);
+  clearPackRuntimeCache(activePackId.value);
+  await reloadPack(activePackId.value);
+}
+
+async function onUpdateUseDevPackMirrors(enabled: boolean) {
+  settingsStore.setUseDevPackMirrors(enabled);
+  const availableMirrors = buildMirrorRouteEntriesForPack(activePackId.value).map(
+    (entry) => entry.url,
+  );
+  const savedManualMirror = settingsStore.packManualMirrorByPack[activePackId.value];
+  if (savedManualMirror && !availableMirrors.includes(savedManualMirror)) {
+    settingsStore.setPackManualMirror(activePackId.value, availableMirrors[0] ?? '');
+  }
   clearPackRuntimeCache(activePackId.value);
   await reloadPack(activePackId.value);
 }
