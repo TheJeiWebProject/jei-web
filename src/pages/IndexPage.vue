@@ -609,7 +609,7 @@ type MirrorRouteEntry = {
 
 function buildMirrorRouteEntriesForPack(packId: string): MirrorRouteEntry[] {
   const aggregateSources = getAggregateSourcePackIds(packId);
-  const sourcePackIds = aggregateSources.length > 0 ? aggregateSources : [packId];
+  const sourcePackIds = Array.from(new Set([packId, ...aggregateSources]));
   const out: MirrorRouteEntry[] = [];
 
   sourcePackIds.forEach((sourcePackId) => {
@@ -639,15 +639,21 @@ function buildMirrorRouteEntriesForPack(packId: string): MirrorRouteEntry[] {
   return out;
 }
 
-const activePackMirrorEntries = computed(() => buildMirrorRouteEntriesForPack(activePackId.value));
+function getRuntimeMirrorUrl(packId: string): string {
+  const runtime = packRoutingRuntimeStore.activeBaseUrlByPack[packId];
+  if (runtime) return runtime.replace(/\/+$/, '');
+  return (getActivePackBaseUrl(packId) ?? '').replace(/\/+$/, '');
+}
+
+const activePackMirrorEntries = computed(() => {
+  void pack.value?.manifest.version;
+  return buildMirrorRouteEntriesForPack(activePackId.value);
+});
 const activePackMirrors = computed(() => {
   return activePackMirrorEntries.value.map((entry) => entry.url);
 });
 const activePackMirrorUrl = computed(() => {
-  const packId = activePackId.value;
-  const runtime = packRoutingRuntimeStore.activeBaseUrlByPack[packId];
-  if (runtime) return runtime.replace(/\/+$/, '');
-  return (getActivePackBaseUrl(packId) ?? '').replace(/\/+$/, '');
+  return getRuntimeMirrorUrl(activePackId.value);
 });
 const activePackManualMirror = computed(() => {
   const saved = settingsStore.packManualMirrorByPack[activePackId.value];
@@ -660,6 +666,9 @@ const activePackMirrorRows = computed(() =>
     sourceLabel: entry.sourceLabel,
     url: entry.url,
     isDev: entry.isDev,
+    isCurrentUsed:
+      !!getRuntimeMirrorUrl(entry.sourcePackId) &&
+      getRuntimeMirrorUrl(entry.sourcePackId) === entry.url,
     latencyMs: packRoutingRuntimeStore.getLatency(entry.sourcePackId, entry.url),
   })),
 );
@@ -1066,6 +1075,55 @@ function mergeInlineItems(items: ItemDef[], recipes: Recipe[]): ItemDef[] {
   return Array.from(byHash.values());
 }
 
+function mergeItemI18nForDetailLoad(
+  base: ItemDef['i18n'] | undefined,
+  incoming: ItemDef['i18n'] | undefined,
+): ItemDef['i18n'] | undefined {
+  if (!base && !incoming) return undefined;
+  if (!base) return incoming;
+  if (!incoming) return base;
+  const out: NonNullable<ItemDef['i18n']> = { ...base };
+  Object.keys(incoming).forEach((locale) => {
+    const next = incoming[locale];
+    if (!next) return;
+    const prev = out[locale];
+    if (!prev) {
+      out[locale] = next;
+      return;
+    }
+    out[locale] = {
+      ...prev,
+      ...next,
+      ...(prev.wiki || next.wiki ? { wiki: next.wiki ?? prev.wiki } : {}),
+      ...(prev.source || next.source
+        ? {
+            source: {
+              ...(prev.source ?? {}),
+              ...(next.source ?? {}),
+            },
+          }
+        : {}),
+      ...(prev.sources || next.sources
+        ? {
+            sources: {
+              ...(prev.sources ?? {}),
+              ...(next.sources ?? {}),
+            },
+          }
+        : {}),
+      ...(prev.wikis || next.wikis
+        ? {
+            wikis: {
+              ...(prev.wikis ?? {}),
+              ...(next.wikis ?? {}),
+            },
+          }
+        : {}),
+    };
+  });
+  return out;
+}
+
 const itemDetailLoadTasks = new Map<string, Promise<void>>();
 const recipeDetailLoadTasks = new Map<string, Promise<void>>();
 
@@ -1095,9 +1153,16 @@ async function ensureItemDetailLoadedByKeyHash(keyHash: string): Promise<void> {
       )
         return;
 
+      const mergedWikis = {
+        ...(def.wikis ?? {}),
+        ...(detail.wikis ?? {}),
+      };
+      const mergedI18n = mergeItemI18nForDetailLoad(def.i18n, detail.i18n);
       const merged: ItemDef = {
         ...def,
         ...detail,
+        ...(Object.keys(mergedWikis).length ? { wikis: mergedWikis } : {}),
+        ...(mergedI18n ? { i18n: mergedI18n } : {}),
         detailPath,
         detailLoaded: true,
       };

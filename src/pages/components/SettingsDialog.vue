@@ -509,7 +509,10 @@
                             {{ t('packMirrorDevBadge') }}
                           </q-chip>
                           <q-chip
-                            v-if="activePackMirrorUrl && mirror.url === activePackMirrorUrl"
+                            v-if="
+                              mirror.isCurrentUsed ??
+                              (!!activePackMirrorUrl && mirror.url === activePackMirrorUrl)
+                            "
                             dense
                             color="primary"
                             text-color="white"
@@ -736,6 +739,7 @@ const props = defineProps<{
     sourcePackId?: string;
     sourceLabel?: string;
     isDev?: boolean;
+    isCurrentUsed?: boolean;
   }>;
   activePackMirrorUrl: string;
   packMirrorSelectionMode: 'auto' | 'manual';

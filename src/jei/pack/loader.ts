@@ -1,6 +1,8 @@
 import type {
   InlineRecipe,
   ItemDef,
+  ItemExtensions,
+  JeiWebWikiRendererDef,
   PackData,
   PackManifest,
   PackTags,
@@ -81,6 +83,8 @@ type AggregateSourceDescriptor = {
   packId: string;
   priority: number;
   matchByName: boolean;
+  mirrors?: string[];
+  devMirrors?: string[];
 };
 
 type AggregatePackDescriptor = {
@@ -98,6 +102,7 @@ type AggregateSourceRuntime = {
 
 type AggregatePackRuntime = {
   bySourcePackId: Map<string, AggregateSourceRuntime>;
+  itemDetailPathByCanonicalId: Map<string, Map<string, string>>;
 };
 
 const packRegistry = new Map<string, PackSource>();
@@ -520,6 +525,20 @@ function resolveAggregateDescriptorUrl(raw: string): string {
   return `/packs/${clean}`;
 }
 
+function parseOptionalStringArray(value: unknown, jsonPath: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(`${jsonPath}: expected string array`);
+  }
+  const out = value.map((entry, index) => {
+    if (typeof entry !== 'string') {
+      throw new Error(`${jsonPath}[${index}]: expected string`);
+    }
+    return entry.trim();
+  });
+  return normalizeSourceMirrorUrls(out);
+}
+
 function parseAggregateDescriptor(raw: unknown, jsonPath: string): AggregatePackDescriptor {
   if (!isRecordLike(raw)) {
     throw new Error(`${jsonPath}: expected object`);
@@ -541,6 +560,8 @@ function parseAggregateDescriptor(raw: unknown, jsonPath: string): AggregatePack
       let packId = '';
       let priority = index;
       let matchByName = true;
+      let mirrors: string[] | undefined;
+      let devMirrors: string[] | undefined;
 
       if (typeof entry === 'string') {
         packId = entry.trim();
@@ -552,6 +573,11 @@ function parseAggregateDescriptor(raw: unknown, jsonPath: string): AggregatePack
         if (typeof entry.matchByName === 'boolean') {
           matchByName = entry.matchByName;
         }
+        mirrors = parseOptionalStringArray(entry.mirrors, `${jsonPath}.sources[${index}].mirrors`);
+        devMirrors = parseOptionalStringArray(
+          entry.devMirrors,
+          `${jsonPath}.sources[${index}].devMirrors`,
+        );
       }
 
       if (!packId) {
@@ -562,6 +588,8 @@ function parseAggregateDescriptor(raw: unknown, jsonPath: string): AggregatePack
         packId,
         priority,
         matchByName,
+        ...(mirrors !== undefined ? { mirrors } : {}),
+        ...(devMirrors !== undefined ? { devMirrors } : {}),
         index,
       };
     },
@@ -578,6 +606,8 @@ function parseAggregateDescriptor(raw: unknown, jsonPath: string): AggregatePack
       packId: entry.packId,
       priority: entry.priority,
       matchByName: entry.matchByName,
+      ...(entry.mirrors !== undefined ? { mirrors: entry.mirrors } : {}),
+      ...(entry.devMirrors !== undefined ? { devMirrors: entry.devMirrors } : {}),
     };
   });
 
@@ -660,6 +690,25 @@ function transformInlineRecipeForAggregate(
   return out;
 }
 
+function cloneItemI18nMapForAggregate(
+  map: ItemDef['i18n'] | undefined,
+): ItemDef['i18n'] | undefined {
+  if (!map) return undefined;
+  const out: NonNullable<ItemDef['i18n']> = {};
+  Object.keys(map).forEach((locale) => {
+    const entry = map[locale];
+    if (!entry) return;
+    out[locale] = {
+      ...entry,
+      ...(entry.wiki ? { wiki: { ...entry.wiki } } : {}),
+      ...(entry.wikis ? { wikis: { ...entry.wikis } } : {}),
+      ...(entry.source ? { source: { ...entry.source } } : {}),
+      ...(entry.sources ? { sources: { ...entry.sources } } : {}),
+    };
+  });
+  return out;
+}
+
 function transformItemForAggregate(item: ItemDef, runtime: AggregateSourceRuntime): ItemDef {
   const out: ItemDef = {
     ...item,
@@ -674,9 +723,33 @@ function transformItemForAggregate(item: ItemDef, runtime: AggregateSourceRuntim
   if (item.rarity) out.rarity = { ...item.rarity };
   if (item.belt) out.belt = { ...item.belt };
   if (item.wiki) out.wiki = { ...item.wiki };
+  if (item.wikis) out.wikis = { ...item.wikis };
+  if (item.i18n) {
+    const clonedI18n = cloneItemI18nMapForAggregate(item.i18n);
+    if (clonedI18n) out.i18n = clonedI18n;
+  }
   if (item.extensions) out.extensions = { ...item.extensions };
   if (item.recipes) {
     out.recipes = item.recipes.map((recipe) => transformInlineRecipeForAggregate(recipe, runtime));
+  }
+  if (item.wiki) {
+    out.wikis = {
+      ...(out.wikis ?? {}),
+      [runtime.packId]: { ...item.wiki },
+    };
+  }
+  if (out.i18n) {
+    Object.keys(out.i18n).forEach((locale) => {
+      const entry = out.i18n?.[locale];
+      if (!entry?.wiki) return;
+      out.i18n![locale] = {
+        ...entry,
+        wikis: {
+          ...(entry.wikis ?? {}),
+          [runtime.packId]: { ...entry.wiki },
+        },
+      };
+    });
   }
   if (item.detailPath) {
     out.detailPath = encodeAggregateDetailPath(runtime.packId, item.detailPath);
@@ -754,6 +827,7 @@ function remapPackTagsForAggregate(
     out.item![tagId] = {
       ...(tagDef.replace !== undefined ? { replace: tagDef.replace } : {}),
       values: tagDef.values.map((value) => remapTagValueForAggregate(value, alias)),
+      ...(tagDef.i18n ? { i18n: { ...tagDef.i18n } } : {}),
     };
   });
   return out;
@@ -813,10 +887,88 @@ function mergeItemExtensionsForAggregate(
   a: ItemDef['extensions'] | undefined,
   b: ItemDef['extensions'] | undefined,
 ): ItemDef['extensions'] | undefined {
-  return mergeWikiForAggregate(
+  const merged = mergeWikiForAggregate(
     a as Record<string, unknown> | undefined,
     b as Record<string, unknown> | undefined,
   ) as ItemDef['extensions'] | undefined;
+  if (!merged) return undefined;
+
+  const leftJeiweb = isRecordLike(a?.jeiweb) ? a.jeiweb : undefined;
+  const rightJeiweb = isRecordLike(b?.jeiweb) ? b.jeiweb : undefined;
+  if (!leftJeiweb && !rightJeiweb) return merged;
+
+  const mergedJeiweb = {
+    ...(isRecordLike(merged.jeiweb) ? merged.jeiweb : {}),
+  } as NonNullable<ItemExtensions['jeiweb']>;
+  const leftWiki = isRecordLike(leftJeiweb?.wiki) ? leftJeiweb.wiki : undefined;
+  const rightWiki = isRecordLike(rightJeiweb?.wiki) ? rightJeiweb.wiki : undefined;
+  const mergedWiki = mergeWikiForAggregate(
+    leftWiki as Record<string, unknown> | undefined,
+    rightWiki as Record<string, unknown> | undefined,
+  );
+  if (mergedWiki) {
+    mergedJeiweb.wiki = { ...mergedWiki };
+  }
+
+  const mergedWikiSources = mergeWikiForAggregate(
+    leftWiki?.sources,
+    rightWiki?.sources,
+  );
+  const mergedWikiMeta = mergeWikiForAggregate(
+    leftWiki?.meta,
+    rightWiki?.meta,
+  );
+  const mergedWikiRenderers = (() => {
+    const out: JeiWebWikiRendererDef[] = [];
+    const seen = new Set<string>();
+    const append = (entries: unknown) => {
+      if (!Array.isArray(entries)) return;
+      entries.forEach((entry) => {
+        if (!isRecordLike(entry)) return;
+        if (typeof entry.type !== 'string' || entry.type.trim().length === 0) return;
+        const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+        const key = id ? `id:${id}` : `json:${stableJsonStringify(entry)}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const next: JeiWebWikiRendererDef = {
+          type: entry.type,
+          ...(id ? { id } : {}),
+          ...(typeof entry.source === 'string' ? { source: entry.source } : {}),
+          ...(typeof entry.order === 'number' && Number.isFinite(entry.order)
+            ? { order: entry.order }
+            : {}),
+          ...(typeof entry.enabled === 'boolean' ? { enabled: entry.enabled } : {}),
+          ...(typeof entry.title === 'string' ? { title: entry.title } : {}),
+          ...(entry.data !== undefined ? { data: entry.data } : {}),
+        };
+        out.push(next);
+      });
+    };
+    append(leftWiki?.renderers);
+    append(rightWiki?.renderers);
+    return out.length ? out : undefined;
+  })();
+  if (mergedJeiweb.wiki || mergedWikiSources || mergedWikiMeta || mergedWikiRenderers) {
+    mergedJeiweb.wiki = {
+      ...(mergedJeiweb.wiki ?? {}),
+      ...(mergedWikiSources ? { sources: mergedWikiSources } : {}),
+      ...(mergedWikiMeta ? { meta: mergedWikiMeta } : {}),
+      ...(mergedWikiRenderers ? { renderers: mergedWikiRenderers } : {}),
+    };
+  }
+
+  const mergedJeiwebI18n = mergeItemI18nForAggregate(leftJeiweb?.i18n, rightJeiweb?.i18n);
+  const mergedJeiwebMeta = mergeWikiForAggregate(
+    leftJeiweb?.meta,
+    rightJeiweb?.meta,
+  );
+  if (mergedJeiwebI18n) mergedJeiweb.i18n = mergedJeiwebI18n;
+  if (mergedJeiwebMeta) mergedJeiweb.meta = mergedJeiwebMeta;
+
+  return {
+    ...merged,
+    jeiweb: mergedJeiweb,
+  };
 }
 
 function mergeItemI18nForAggregate(
@@ -923,6 +1075,36 @@ function mergeInlineRecipesForAggregate(
   return out;
 }
 
+function upsertLegacyWikiForAggregate(
+  target: ItemDef,
+  sourcePackId: string | undefined,
+  wiki: Record<string, unknown> | undefined,
+  i18nMap: ItemDef['i18n'] | undefined,
+): void {
+  if (!sourcePackId) return;
+  if (wiki) {
+    target.wikis = {
+      ...(target.wikis ?? {}),
+      [sourcePackId]: { ...wiki },
+    };
+  }
+  const targetI18n = target.i18n;
+  if (!targetI18n || !i18nMap) return;
+  Object.keys(i18nMap).forEach((locale) => {
+    const sourceEntry = i18nMap[locale];
+    if (!sourceEntry?.wiki) return;
+    const targetEntry = targetI18n[locale];
+    if (!targetEntry) return;
+    targetI18n[locale] = {
+      ...targetEntry,
+      wikis: {
+        ...(targetEntry.wikis ?? {}),
+        [sourcePackId]: { ...sourceEntry.wiki },
+      },
+    };
+  });
+}
+
 function mergeItemForAggregate(base: ItemDef, incoming: ItemDef): ItemDef {
   const out: ItemDef = {
     ...base,
@@ -1009,6 +1191,11 @@ function mergeItemForAggregate(base: ItemDef, incoming: ItemDef): ItemDef {
   const recipes = mergeInlineRecipesForAggregate(out.recipes, incoming.recipes);
   if (recipes) out.recipes = recipes;
 
+  const baseSourcePackId = decodeAggregateDetailPath(base.detailPath ?? '')?.sourcePackId;
+  const incomingSourcePackId = decodeAggregateDetailPath(incoming.detailPath ?? '')?.sourcePackId;
+  upsertLegacyWikiForAggregate(out, baseSourcePackId, base.wiki, base.i18n);
+  upsertLegacyWikiForAggregate(out, incomingSourcePackId, incoming.wiki, incoming.i18n);
+
   return out;
 }
 
@@ -1038,6 +1225,20 @@ async function loadAggregatePack(
           `Aggregate source "${packId}" cannot reference virtual source "${entry.packId}"`,
         );
       }
+      const overrideMirrors = normalizeSourceMirrorUrls(entry.mirrors);
+      const overrideDevMirrors = normalizeSourceMirrorUrls(entry.devMirrors);
+      if (!overrideMirrors.length && !overrideDevMirrors.length) return;
+      const nextMirrors = overrideMirrors.length ? overrideMirrors : normalizeSourceMirrorUrls(nested?.mirrors);
+      const nextDevMirrors = overrideDevMirrors.length
+        ? overrideDevMirrors
+        : normalizeSourceMirrorUrls(nested?.devMirrors);
+      registerPackSource({
+        packId: entry.packId,
+        label: nested?.label ?? entry.packId,
+        mirrors: nextMirrors,
+        ...(nextDevMirrors.length > 0 ? { devMirrors: nextDevMirrors } : {}),
+      });
+      clearPackRuntimeCache(entry.packId);
     });
 
     const shouldForceSourceRefresh = packRefreshToken.has(packId);
@@ -1101,6 +1302,18 @@ async function loadAggregatePack(
         recipeTypePrefix: `${sourceDef.packId}::`,
         itemIdAlias: alias,
       };
+    });
+
+    const itemDetailPathByCanonicalId = new Map<string, Map<string, string>>();
+    loadedByPriority.forEach(({ pack }, index) => {
+      const runtime = sourceRuntimes[index]!;
+      pack.items.forEach((item) => {
+        if (!item.detailPath) return;
+        const canonicalId = runtime.itemIdAlias.get(item.key.id) ?? item.key.id;
+        const bySource = itemDetailPathByCanonicalId.get(canonicalId) ?? new Map<string, string>();
+        bySource.set(runtime.packId, item.detailPath);
+        itemDetailPathByCanonicalId.set(canonicalId, bySource);
+      });
     });
 
     const mergedItemsByHash = new Map<string, ItemDef>();
@@ -1167,6 +1380,7 @@ async function loadAggregatePack(
 
     aggregateRuntimeCache.set(packId, {
       bySourcePackId: new Map(sourceRuntimes.map((runtime) => [runtime.packId, runtime])),
+      itemDetailPathByCanonicalId,
     });
 
     onProgress?.({ message: 'Done', percent: 1 });
@@ -1722,10 +1936,52 @@ export async function loadPackItemDetail(packId: string, detailPath: string): Pr
       );
     }
     const sourceItem = await loadPackItemDetail(detailRef.sourcePackId, detailRef.sourcePath);
-    const item = transformItemForAggregate(sourceItem, sourceRuntime);
-    item.detailPath = encodeAggregateDetailPath(detailRef.sourcePackId, detailRef.sourcePath);
-    item.detailLoaded = true;
-    return item;
+    let mergedItem = transformItemForAggregate(sourceItem, sourceRuntime);
+
+    const canonicalId = mergedItem.key.id;
+    const detailPathsBySource = runtime.itemDetailPathByCanonicalId.get(canonicalId);
+    if (detailPathsBySource) {
+      for (const [sourcePackId, sourcePath] of detailPathsBySource.entries()) {
+        if (sourcePackId === detailRef.sourcePackId) continue;
+        const additionalRuntime = runtime.bySourcePackId.get(sourcePackId);
+        if (!additionalRuntime) continue;
+        try {
+          const additionalSourceItem = await loadPackItemDetail(sourcePackId, sourcePath);
+          const transformedAdditionalItem = transformItemForAggregate(
+            additionalSourceItem,
+            additionalRuntime,
+          );
+          mergedItem = mergeItemForAggregate(mergedItem, transformedAdditionalItem);
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    const existingJeiweb = isRecordLike(mergedItem.extensions?.jeiweb)
+      ? mergedItem.extensions.jeiweb
+      : undefined;
+    const existingMeta = isRecordLike(existingJeiweb?.meta) ? existingJeiweb.meta : undefined;
+    const existingAggregateSources = Array.isArray(existingMeta?.aggregateDetailSources)
+      ? existingMeta.aggregateDetailSources.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    const mergedSources = Array.from(
+      new Set([detailRef.sourcePackId, ...Object.keys(mergedItem.wikis ?? {}), ...existingAggregateSources]),
+    );
+    mergedItem.extensions = {
+      ...(mergedItem.extensions ?? {}),
+      jeiweb: {
+        ...(existingJeiweb ?? {}),
+        meta: {
+          ...(existingMeta ?? {}),
+          aggregateDetailSources: mergedSources,
+        },
+      },
+    };
+
+    mergedItem.detailPath = encodeAggregateDetailPath(detailRef.sourcePackId, detailRef.sourcePath);
+    mergedItem.detailLoaded = true;
+    return mergedItem;
   }
 
   const base = packBaseUrl(packId);

@@ -129,41 +129,51 @@
           <q-separator />
         </template>
 
-        <template v-else-if="hasStructuredWiki">
-          <div class="wiki-renderer-header q-mb-sm">
-            <div class="wiki-renderer-header__title">Legacy Structured Wiki</div>
-            <div class="wiki-renderer-header__meta">
-              {{ legacyWikiSourceTitle }} · {{ legacyStructuredSourceLabel }} · structured-wiki
-            </div>
-          </div>
-          <div v-if="briefDescriptionDocument" class="wiki-brief">
-            <div class="text-subtitle2 q-mb-sm">{{ t('description') }}</div>
-            <WikiDocument :document="briefDescriptionDocument" />
-          </div>
-
-          <div class="wiki-body">
-            <template v-if="chapterGroup.length">
-              <WikiChapterGroup
-                v-for="group in chapterGroup"
-                :key="group.title"
-                :group="group"
-                :widget-common-map="widgetCommonMap"
-                :document-map="documentMap"
-              />
-            </template>
-
-            <template v-else>
-              <div class="fallback-docs">
-                <section
-                  v-for="(doc, docId) in documentMap"
-                  :key="docId"
-                  class="fallback-section q-mb-md"
-                >
-                  <div class="text-subtitle2 q-mb-sm">{{ getDocumentTitle(doc, docId) }}</div>
-                  <WikiDocument :document="doc" />
-                </section>
+        <template v-if="legacyStructuredRenderers.length > 0">
+          <div class="wiki-renderer-stack column q-gutter-lg">
+            <section
+              v-for="renderer in legacyStructuredRenderers"
+              :key="renderer.id"
+              class="wiki-renderer-section"
+            >
+              <div class="wiki-renderer-header q-mb-sm">
+                <div class="wiki-renderer-header__title">
+                  Legacy Structured Wiki{{
+                    renderer.sourcePackId ? ` [${renderer.sourcePackId}]` : ''
+                  }}
+                </div>
+                <div class="wiki-renderer-header__meta">
+                  {{ renderer.sourceTitle }} · {{ renderer.sourceLabel }} · structured-wiki
+                </div>
               </div>
-            </template>
+              <div v-if="renderer.structured.briefDescriptionDocument" class="wiki-brief">
+                <div class="text-subtitle2 q-mb-sm">{{ t('description') }}</div>
+                <WikiDocument :document="renderer.structured.briefDescriptionDocument" />
+              </div>
+              <div class="wiki-body">
+                <template v-if="renderer.structured.chapterGroup.length">
+                  <WikiChapterGroup
+                    v-for="group in renderer.structured.chapterGroup"
+                    :key="group.title"
+                    :group="group"
+                    :widget-common-map="renderer.structured.widgetCommonMap"
+                    :document-map="renderer.structured.documentMap"
+                  />
+                </template>
+                <template v-else>
+                  <div class="fallback-docs">
+                    <section
+                      v-for="(doc, docId) in renderer.structured.documentMap"
+                      :key="docId"
+                      class="fallback-section q-mb-md"
+                    >
+                      <div class="text-subtitle2 q-mb-sm">{{ getDocumentTitle(doc, docId) }}</div>
+                      <WikiDocument :document="doc" />
+                    </section>
+                  </div>
+                </template>
+              </div>
+            </section>
           </div>
           <q-separator />
         </template>
@@ -195,6 +205,14 @@
           </div>
           <div v-else class="text-caption text-grey-7">{{ t('noTags') }}</div>
         </div>
+
+        <q-expansion-item dense dense-toggle icon="bug_report" label="Wiki Debug">
+          <q-card flat bordered>
+            <q-card-section class="q-pa-sm">
+              <pre class="wiki-debug-pre">{{ wikiDebugText }}</pre>
+            </q-card-section>
+          </q-card>
+        </q-expansion-item>
       </div>
     </div>
 
@@ -599,6 +617,14 @@ interface PreparedWikiRenderer {
   structured?: StructuredWikiRenderData;
 }
 
+interface LegacyStructuredRenderer {
+  id: string;
+  sourceTitle: string;
+  sourceLabel: string;
+  sourcePackId?: string;
+  structured: StructuredWikiRenderData;
+}
+
 function isRecordLike(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -621,21 +647,44 @@ function normalizeDocument(raw: unknown): Document | null {
 }
 
 function buildStructuredWikiRenderData(raw: unknown): StructuredWikiRenderData | null {
+  const candidates: unknown[] = [raw];
   const item = normalizeWikiItem(raw);
-  if (!item) return null;
-  const documentMap = isRecordLike(item.document?.documentMap) ? item.document.documentMap : {};
-  const chapterGroup = Array.isArray(item.document?.chapterGroup) ? item.document.chapterGroup : [];
-  const widgetCommonMap = isRecordLike(item.document?.widgetCommonMap)
-    ? item.document.widgetCommonMap
-    : {};
-  const briefDescriptionDocument = normalizeDocument(item.brief?.description);
-  if (!Object.keys(documentMap).length && !briefDescriptionDocument) return null;
-  return {
-    briefDescriptionDocument,
-    documentMap,
-    chapterGroup,
-    widgetCommonMap,
-  };
+  if (item) candidates.push(item);
+  if (isRecordLike(raw)) {
+    candidates.push(raw.data, raw.item, raw.wiki);
+    if (isRecordLike(raw.data)) {
+      candidates.push(raw.data.item, raw.data.wiki, raw.data.document);
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!isRecordLike(candidate)) continue;
+    const documentContainer = isRecordLike(candidate.document) ? candidate.document : candidate;
+    const documentMap = isRecordLike(documentContainer.documentMap)
+      ? documentContainer.documentMap
+      : {};
+    const chapterGroup = Array.isArray(documentContainer.chapterGroup)
+      ? documentContainer.chapterGroup
+      : [];
+    const widgetCommonMap = isRecordLike(documentContainer.widgetCommonMap)
+      ? documentContainer.widgetCommonMap
+      : {};
+
+    const briefDescriptionDocument =
+      normalizeDocument(isRecordLike(candidate.brief) ? candidate.brief.description : undefined) ??
+      normalizeDocument(
+        isRecordLike(documentContainer.brief) ? documentContainer.brief.description : undefined,
+      );
+
+    if (!Object.keys(documentMap).length && !briefDescriptionDocument) continue;
+    return {
+      briefDescriptionDocument,
+      documentMap: documentMap as Record<string, Document>,
+      chapterGroup: chapterGroup as ChapterGroup[],
+      widgetCommonMap: widgetCommonMap as Record<string, WidgetCommon>,
+    };
+  }
+  return null;
 }
 
 function normalizeRendererType(rawType: unknown): SupportedWikiRendererType | null {
@@ -836,25 +885,55 @@ function getJeiwebWikiConfig(
   return { renderers, sources };
 }
 
-const legacyStructuredWikiData = computed(() =>
-  buildStructuredWikiRenderData(props.currentItemDef?.wiki),
-);
-const hasStructuredWiki = computed(() => Boolean(legacyStructuredWikiData.value));
+const legacyStructuredRenderers = computed<LegacyStructuredRenderer[]>(() => {
+  const out: LegacyStructuredRenderer[] = [];
+  const seen = new Set<string>();
+  const append = (key: string, source: unknown, sourceLabel: string, sourcePackId?: string) => {
+    const structured = buildStructuredWikiRenderData(source);
+    if (!structured) return;
+    const normalizedKey = key.trim() || `legacy-${out.length}`;
+    if (seen.has(normalizedKey)) return;
+    seen.add(normalizedKey);
+    out.push({
+      id: `legacy-structured-${normalizedKey}`,
+      sourceTitle: buildRendererSourceTitle(sourcePackId),
+      sourceLabel,
+      ...(sourcePackId ? { sourcePackId } : {}),
+      structured,
+    });
+  };
 
-const documentMap = computed<Record<string, Document>>(() => {
-  return legacyStructuredWikiData.value?.documentMap || {};
-});
+  const localizedEntry = getCurrentItemLocaleEntry();
+  const localizedWikis = isRecordLike(localizedEntry?.wikis) ? localizedEntry.wikis : undefined;
+  if (localizedWikis) {
+    Object.keys(localizedWikis).forEach((key) => {
+      append(key, localizedWikis[key], `i18n.wikis(${key})`, key);
+    });
+  }
+  const baseWikis = props.currentItemDef?.wikis;
+  if (isRecordLike(baseWikis)) {
+    Object.keys(baseWikis).forEach((key) => {
+      append(key, baseWikis[key], `item.wikis(${key})`, key);
+    });
+  }
 
-const chapterGroup = computed<ChapterGroup[]>(() => {
-  return legacyStructuredWikiData.value?.chapterGroup || [];
-});
-
-const widgetCommonMap = computed<Record<string, WidgetCommon>>(() => {
-  return legacyStructuredWikiData.value?.widgetCommonMap || {};
-});
-
-const briefDescriptionDocument = computed<Document | null>(() => {
-  return legacyStructuredWikiData.value?.briefDescriptionDocument || null;
+  if (out.length > 0) return out;
+  if (localizedEntry?.wiki !== undefined) {
+    append(
+      '$legacy.wiki.i18n',
+      localizedEntry.wiki,
+      'i18n.wiki',
+      getAggregateSourcePackId(props.currentItemDef?.detailPath) ?? props.pack?.manifest.packId,
+    );
+  } else if (props.currentItemDef?.wiki !== undefined) {
+    append(
+      '$legacy.wiki',
+      props.currentItemDef.wiki,
+      'item.wiki',
+      getAggregateSourcePackId(props.currentItemDef?.detailPath) ?? props.pack?.manifest.packId,
+    );
+  }
+  return out;
 });
 
 const extensionWikiRenderers = computed<PreparedWikiRenderer[]>(() => {
@@ -945,17 +1024,63 @@ const extensionWikiRenderers = computed<PreparedWikiRenderer[]>(() => {
 
 const hasExtensionWikiRenderers = computed(() => extensionWikiRenderers.value.length > 0);
 const legacyWikiSourceTitle = computed(() => buildRendererSourceTitle(props.pack?.manifest.packId));
-const legacyStructuredSourceLabel = computed(() => {
-  const localizedEntry = getCurrentItemLocaleEntry();
-  if (isRecordLike(localizedEntry?.wikis)) return 'i18n.wikis(default)';
-  if (localizedEntry?.wiki !== undefined) return 'i18n.wiki';
-  if (isRecordLike(props.currentItemDef?.wikis)) return 'item.wikis(default)';
-  return 'item.wiki';
-});
 const legacyDescriptionSourceLabel = computed(() => {
   const localizedEntry = getCurrentItemLocaleEntry();
   if (typeof localizedEntry?.description === 'string') return 'i18n.description';
   return 'item.description';
+});
+const wikiDebugText = computed(() => {
+  const item = props.currentItemDef;
+  const localized = getCurrentItemLocaleEntry();
+  const itemWikis = isRecordLike(item?.wikis) ? item.wikis : {};
+  const localizedWikis = isRecordLike(localized?.wikis) ? localized.wikis : {};
+  const aggregateDetailSources = Array.isArray(
+    item?.extensions?.jeiweb?.meta?.aggregateDetailSources,
+  )
+    ? item.extensions.jeiweb.meta.aggregateDetailSources.filter(
+        (entry): entry is string => typeof entry === 'string',
+      )
+    : [];
+  const allKeys = Array.from(
+    new Set([...Object.keys(itemWikis), ...Object.keys(localizedWikis)]),
+  ).sort((a, b) => a.localeCompare(b));
+  const byKey = Object.fromEntries(
+    allKeys.map((key) => {
+      const itemSource = itemWikis[key];
+      const localizedSource = localizedWikis[key];
+      const itemStructured = buildStructuredWikiRenderData(itemSource);
+      const localizedStructured = buildStructuredWikiRenderData(localizedSource);
+      return [
+        key,
+        {
+          hasItemSource: itemSource !== undefined,
+          hasLocalizedSource: localizedSource !== undefined,
+          itemStructured: !!itemStructured,
+          localizedStructured: !!localizedStructured,
+          itemDocumentCount: itemStructured ? Object.keys(itemStructured.documentMap).length : 0,
+          localizedDocumentCount: localizedStructured
+            ? Object.keys(localizedStructured.documentMap).length
+            : 0,
+        },
+      ];
+    }),
+  );
+  return JSON.stringify(
+    {
+      itemId: item?.key.id ?? null,
+      detailPath: item?.detailPath ?? null,
+      extensionRendererCount: extensionWikiRenderers.value.length,
+      extensionRendererTypes: extensionWikiRenderers.value.map((entry) => entry.type),
+      legacyStructuredRendererCount: legacyStructuredRenderers.value.length,
+      legacyStructuredRendererIds: legacyStructuredRenderers.value.map((entry) => entry.id),
+      aggregateDetailSources,
+      itemWikisKeys: Object.keys(itemWikis),
+      localizedWikisKeys: Object.keys(localizedWikis),
+      byKey,
+    },
+    null,
+    2,
+  );
 });
 
 function getDocumentTitle(doc: Document, fallback: string) {
@@ -1286,6 +1411,16 @@ provide('wikiImageOpen', openViewer);
 .wiki-description :deep(img) {
   max-width: 100%;
   height: auto;
+}
+
+.wiki-debug-pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .jei-type-layout {
