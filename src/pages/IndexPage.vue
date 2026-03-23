@@ -408,8 +408,8 @@ import {
 } from 'src/stores/keybindings';
 import { usePackRoutingRuntimeStore, type PackSourceSnapshot } from 'src/stores/packRoutingRuntime';
 import {
-  evaluateSearchExpression,
   parseSearchExpression,
+  type SearchExpressionNode,
   type SearchTerm,
 } from 'src/utils/searchExpression';
 import { storage } from 'src/utils/storage';
@@ -1281,6 +1281,33 @@ type NameSearchKeys = {
   pinyinFirsts: string[];
 };
 
+type SearchableItemEntry = {
+  keyHash: string;
+  idLower: string;
+  gameIdLower: string;
+  namesLower: string[];
+  pinyinFulls: string[];
+  pinyinFirsts: string[];
+  tagsLower: string[];
+};
+
+type SearchWorkerResponse = {
+  type: 'result';
+  requestId: number;
+  keyHashes: string[];
+};
+
+type SearchWorkerRequest =
+  | {
+      type: 'init';
+      items: SearchableItemEntry[];
+    }
+  | {
+      type: 'search';
+      requestId: number;
+      expression: SearchExpressionNode | null;
+    };
+
 function normalizePinyinQuery(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -1368,20 +1395,194 @@ const availableGameIds = computed(() => {
   return Array.from(namespaces).sort();
 });
 
+const searchableItemsForFilter = computed<SearchableItemEntry[]>(() => {
+  const idx = index.value;
+  if (!idx) return [];
+  const sortedEntries = Array.from(idx.itemsByKeyHash.entries()).sort((a, b) =>
+    a[1].name.localeCompare(b[1].name),
+  );
+  const keysByKeyHash = nameSearchKeysByKeyHash.value;
+  const out: SearchableItemEntry[] = [];
+  for (const [keyHash, def] of sortedEntries) {
+    const idLower = def.key.id.toLowerCase();
+    const gameIdLower =
+      (idLower.includes(':') ? idLower.split(':')[0] : idLower.split('.')[0]) ?? '';
+    const nameKeys = keysByKeyHash.get(keyHash);
+    const namesLower = nameKeys?.namesLower ?? [(def.name ?? '').toLowerCase()];
+    const pinyinFulls = nameKeys?.pinyinFulls ?? [];
+    const pinyinFirsts = nameKeys?.pinyinFirsts ?? [];
+    const tags = idx.tagIdsByItemId.get(def.key.id);
+    const tagsLowerSet = new Set<string>();
+    if (tags) {
+      Array.from(tags).forEach((tagId) => {
+        tagsLowerSet.add(tagId.toLowerCase());
+        const localized = getTagDisplayName(tagId).toLowerCase();
+        if (localized) tagsLowerSet.add(localized);
+      });
+    }
+    out.push({
+      keyHash,
+      idLower,
+      gameIdLower,
+      namesLower,
+      pinyinFulls,
+      pinyinFirsts,
+      tagsLower: Array.from(tagsLowerSet),
+    });
+  }
+  return out;
+});
+
+const filteredKeyHashes = ref<string[]>([]);
+const searchWorker = ref<Worker | null>(null);
+const searchRequestId = ref(0);
+const appliedSearchRequestId = ref(0);
+const SEARCH_FILTER_DEBOUNCE_MS = 90;
+let searchFilterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function matchesSearchableItem(
+  entry: SearchableItemEntry,
+  searchExpression: SearchExpressionNode | null,
+): boolean {
+  const matchesTerm = (term: SearchTerm): boolean => {
+    switch (term.field) {
+      case 'text': {
+        if (entry.namesLower.some((name) => name.includes(term.value))) return true;
+        const query = normalizePinyinQuery(term.value);
+        if (query && entry.pinyinFulls.some((pinyinValue) => pinyinValue.includes(query)))
+          return true;
+        if (query && entry.pinyinFirsts.some((pinyinValue) => pinyinValue.includes(query)))
+          return true;
+        if (entry.idLower.includes(term.value)) return true;
+        if (entry.tagsLower.some((tag) => tag.includes(term.value))) return true;
+        return false;
+      }
+      case 'itemId':
+        return entry.idLower.includes(term.value);
+      case 'gameId':
+        return entry.gameIdLower.includes(term.value);
+      case 'tag':
+        return entry.tagsLower.some((tag) => tag.includes(term.value));
+    }
+  };
+
+  if (!searchExpression) return true;
+  switch (searchExpression.kind) {
+    case 'term':
+      return matchesTerm(searchExpression.term);
+    case 'and':
+      return searchExpression.children.every((child) => matchesSearchableItem(entry, child));
+    case 'or':
+      return searchExpression.children.some((child) => matchesSearchableItem(entry, child));
+    case 'not':
+      return !matchesSearchableItem(entry, searchExpression.child);
+  }
+}
+
+function filterKeyHashesInMainThread(
+  entries: SearchableItemEntry[],
+  searchExpression: SearchExpressionNode | null,
+): string[] {
+  return entries
+    .filter((entry) => matchesSearchableItem(entry, searchExpression))
+    .map((entry) => entry.keyHash);
+}
+
+function applyFilteredKeyHashes(keyHashes: string[], requestId: number): void {
+  if (requestId < appliedSearchRequestId.value) return;
+  appliedSearchRequestId.value = requestId;
+  filteredKeyHashes.value = keyHashes;
+}
+
+function ensureSearchWorker(): Worker | null {
+  if (typeof Worker === 'undefined') return null;
+  if (searchWorker.value) return searchWorker.value;
+  const worker = new Worker(new URL('../workers/itemSearch.worker.ts', import.meta.url), {
+    type: 'module',
+  });
+  worker.onmessage = (event: MessageEvent<SearchWorkerResponse>) => {
+    const data = event.data;
+    if (!data || data.type !== 'result') return;
+    applyFilteredKeyHashes(data.keyHashes, data.requestId);
+  };
+  worker.onerror = () => {
+    worker.terminate();
+    if (searchWorker.value === worker) searchWorker.value = null;
+    const entries = searchableItemsForFilter.value;
+    const requestId = searchRequestId.value + 1;
+    searchRequestId.value = requestId;
+    applyFilteredKeyHashes(filterKeyHashesInMainThread(entries, parsedSearch.value), requestId);
+  };
+  searchWorker.value = worker;
+  return worker;
+}
+
+function triggerSearchFilter(): void {
+  const entries = searchableItemsForFilter.value;
+  const searchExpression = parsedSearch.value;
+  const worker = ensureSearchWorker();
+  if (!worker) {
+    const requestId = searchRequestId.value + 1;
+    searchRequestId.value = requestId;
+    applyFilteredKeyHashes(filterKeyHashesInMainThread(entries, searchExpression), requestId);
+    return;
+  }
+  const requestId = searchRequestId.value + 1;
+  searchRequestId.value = requestId;
+  const payload: SearchWorkerRequest = {
+    type: 'search',
+    requestId,
+    expression: searchExpression,
+  };
+  worker.postMessage(payload);
+}
+
+function clearSearchFilterDebounceTimer(): void {
+  if (searchFilterDebounceTimer === null) return;
+  clearTimeout(searchFilterDebounceTimer);
+  searchFilterDebounceTimer = null;
+}
+
+function triggerSearchFilterDebounced(): void {
+  clearSearchFilterDebounceTimer();
+  searchFilterDebounceTimer = setTimeout(() => {
+    searchFilterDebounceTimer = null;
+    triggerSearchFilter();
+  }, SEARCH_FILTER_DEBOUNCE_MS);
+}
+
+watch(
+  searchableItemsForFilter,
+  (entries) => {
+    clearSearchFilterDebounceTimer();
+    filteredKeyHashes.value = entries.map((entry) => entry.keyHash);
+    const worker = ensureSearchWorker();
+    if (worker) {
+      const payload: SearchWorkerRequest = {
+        type: 'init',
+        items: entries,
+      };
+      worker.postMessage(payload);
+    }
+    triggerSearchFilter();
+  },
+  { immediate: true },
+);
+
+watch(parsedSearch, () => {
+  triggerSearchFilterDebounced();
+});
+
 const filteredItems = computed(() => {
   const map = index.value?.itemsByKeyHash;
   if (!map) return [];
-  const entries = Array.from(map.entries()).map(([keyHash, def]) => ({ keyHash, def }));
-  const searchExpression = parsedSearch.value;
-  const keysByKeyHash = nameSearchKeysByKeyHash.value;
-
-  const filtered = entries.filter((e) =>
-    matchesSearch(e.def, searchExpression, keysByKeyHash.get(e.keyHash)),
-  );
-  filtered.sort((a, b) => {
-    return a.def.name.localeCompare(b.def.name);
-  });
-  return filtered;
+  return filteredKeyHashes.value
+    .map((keyHash) => {
+      const def = map.get(keyHash);
+      if (!def) return null;
+      return { keyHash, def };
+    })
+    .filter((entry): entry is { keyHash: string; def: ItemDef } => entry !== null);
 });
 
 const pageCount = computed(() => {
@@ -1965,6 +2166,9 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown, true);
   window.removeEventListener('resize', onWindowResize);
   resizeObserver.value?.disconnect();
+  clearSearchFilterDebounceTimer();
+  searchWorker.value?.terminate();
+  searchWorker.value = null;
   runtimePackDispose.value?.();
   runtimePackDispose.value = null;
 });
@@ -3518,50 +3722,6 @@ function pushHistoryKeyHash(keyHash: string) {
   // 保持历史记录多一点,展示的时候再截断
   const next = [keyHash, ...historyKeyHashes.value.filter((k) => k !== keyHash)].slice(0, 100);
   historyKeyHashes.value = next;
-}
-
-function matchesSearch(
-  def: ItemDef,
-  searchExpression: ReturnType<typeof parseSearchExpression>,
-  nameKeys?: NameSearchKeys,
-): boolean {
-  const namesLower = nameKeys?.namesLower ?? [(def.name ?? '').toLowerCase()];
-  const pinyinFulls = nameKeys?.pinyinFulls ?? [];
-  const pinyinFirsts = nameKeys?.pinyinFirsts ?? [];
-  const id = def.key.id.toLowerCase();
-  const gameId = (id.includes(':') ? id.split(':')[0] : id.split('.')[0]) ?? '';
-  const tags = index.value?.tagIdsByItemId.get(def.key.id);
-
-  const tagMatches = (term: string): boolean => {
-    if (!tags) return false;
-    return Array.from(tags).some((tagId) => {
-      if (tagId.toLowerCase().includes(term)) return true;
-      const localized = getTagDisplayName(tagId).toLowerCase();
-      return localized.includes(term);
-    });
-  };
-
-  const matchesTerm = (term: SearchTerm): boolean => {
-    switch (term.field) {
-      case 'text': {
-        if (namesLower.some((n) => n.includes(term.value))) return true;
-        const q = normalizePinyinQuery(term.value);
-        if (q && pinyinFulls.some((p) => p.includes(q))) return true;
-        if (q && pinyinFirsts.some((p) => p.includes(q))) return true;
-        if (id.includes(term.value)) return true;
-        if (tagMatches(term.value)) return true;
-        return false;
-      }
-      case 'itemId':
-        return id.includes(term.value);
-      case 'gameId':
-        return gameId.includes(term.value);
-      case 'tag':
-        return tagMatches(term.value);
-    }
-  };
-
-  return evaluateSearchExpression(searchExpression, matchesTerm);
 }
 </script>
 

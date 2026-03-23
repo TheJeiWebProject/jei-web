@@ -121,7 +121,11 @@ const iconSrcRaw = computed(() => {
   const def = props.itemDefsByKeyHash[stackItemKeyHash(s)];
   return def?.icon ?? '';
 });
-const iconSrc = useCachedImageUrl(useRuntimeImageUrl(iconSrcRaw));
+const stackViewEl = ref<HTMLElement | null>(null);
+const tooltipRef = ref<{ hide?: () => void } | null>(null);
+const shouldRenderVisual = ref(!props.lazyVisual);
+const iconSrcRuntime = useRuntimeImageUrl(iconSrcRaw);
+const iconSrc = useCachedImageUrl(() => (shouldRenderVisual.value ? iconSrcRuntime.value : ''));
 
 const iconSprite = computed(() => {
   const s = stack.value;
@@ -130,7 +134,10 @@ const iconSprite = computed(() => {
   return def?.iconSprite;
 });
 const iconSpriteUrlRaw = computed(() => iconSprite.value?.url ?? '');
-const iconSpriteUrl = useCachedImageUrl(useRuntimeImageUrl(iconSpriteUrlRaw));
+const iconSpriteUrlRuntime = useRuntimeImageUrl(iconSpriteUrlRaw);
+const iconSpriteUrl = useCachedImageUrl(() =>
+  shouldRenderVisual.value ? iconSpriteUrlRuntime.value : '',
+);
 
 const itemDef = computed<ItemDef | undefined>(() => {
   const s = stack.value;
@@ -152,11 +159,7 @@ const rarityStyle = computed(() => {
   return { color };
 });
 
-const stackViewEl = ref<HTMLElement | null>(null);
-const tooltipRef = ref<{ hide?: () => void } | null>(null);
-const shouldRenderVisual = ref(!props.lazyVisual);
-
-const hasImageVisual = computed(() => !!iconSrc.value || !!iconSprite.value);
+const hasImageVisual = computed(() => !!iconSrcRaw.value || !!iconSprite.value);
 const showIconSrc = computed(() => shouldRenderVisual.value && !!iconSrc.value);
 const showIconSprite = computed(
   () =>
