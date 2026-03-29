@@ -13,9 +13,24 @@ import type {
   TagValue,
 } from 'src/jei/types';
 import { stableJsonStringify } from 'src/jei/utils/stableJson';
-import { idbClearRemoteCache, idbGetPackZip, idbGetRemoteCache, idbSetRemoteCache } from 'src/jei/utils/idb';
-import { assertItemDef, assertPackManifest, assertPackTags, assertRecipe, assertRecipeTypeDef } from './validate';
-import { applyImageProxyToItem, applyImageProxyToPack, ensurePackImageProxyTokens } from './imageProxy';
+import {
+  idbClearRemoteCache,
+  idbGetPackZip,
+  idbGetRemoteCache,
+  idbSetRemoteCache,
+} from 'src/jei/utils/idb';
+import {
+  assertItemDef,
+  assertPackManifest,
+  assertPackTags,
+  assertRecipe,
+  assertRecipeTypeDef,
+} from './validate';
+import {
+  applyImageProxyToItem,
+  applyImageProxyToPack,
+  ensurePackImageProxyTokens,
+} from './imageProxy';
 import JSZip from 'jszip';
 
 const packRefreshToken = new Map<string, string>();
@@ -28,7 +43,11 @@ function withRefreshToken(url: string, packId?: string): string {
   return `${url}${sep}__refresh=${encodeURIComponent(token)}`;
 }
 
-async function fetchWithRefresh(url: string, packId?: string, init?: RequestInit): Promise<Response> {
+async function fetchWithRefresh(
+  url: string,
+  packId?: string,
+  init?: RequestInit,
+): Promise<Response> {
   const requestUrl = withRefreshToken(url, packId);
   const res = await fetch(requestUrl, {
     ...init,
@@ -51,6 +70,21 @@ async function fetchText(url: string, packId?: string): Promise<string> {
   return res.text();
 }
 
+async function fetchSharedJson(
+  base: string,
+  packId: string,
+  relativePath: string,
+): Promise<unknown> {
+  const normalized = relativePath.replace(/^\/+/, '');
+  const cacheKey = `${packId}:${normalized}`;
+  let task = sharedJsonCache.get(cacheKey);
+  if (!task) {
+    task = fetchJson(`${base}/${normalized}`, packId);
+    sharedJsonCache.set(cacheKey, task);
+  }
+  return task;
+}
+
 async function tryFetchIndexTimestamp(baseUrl: string, packId: string): Promise<string | null> {
   try {
     // 尝试获取 index.html (通常是 baseUrl 对应的页面)
@@ -70,6 +104,7 @@ async function tryFetchIndexTimestamp(baseUrl: string, packId: string): Promise<
 
 const jsonArrayCache = new Map<string, Promise<unknown>>();
 const manifestCache = new Map<string, Promise<PackManifest>>();
+const sharedJsonCache = new Map<string, Promise<unknown>>();
 
 export interface PackSource {
   packId: string;
@@ -236,7 +271,10 @@ function normalizeSourceMirrorUrls(urls: string[] | undefined): string[] {
   );
 }
 
-function getSourceMirrorUrls(source: PackSource, includeDevMirrors = packDevMirrorsEnabled): string[] {
+function getSourceMirrorUrls(
+  source: PackSource,
+  includeDevMirrors = packDevMirrorsEnabled,
+): string[] {
   return normalizeSourceMirrorUrls([
     ...(source.mirrors ?? []),
     ...(includeDevMirrors ? (source.devMirrors ?? []) : []),
@@ -262,6 +300,11 @@ export function clearPackRuntimeCache(packId?: string) {
         jsonArrayCache.delete(key);
       }
     }
+    for (const key of sharedJsonCache.keys()) {
+      if (key.startsWith(`${packId}:`)) {
+        sharedJsonCache.delete(key);
+      }
+    }
     // 异步清除 IndexedDB 缓存
     idbClearRemoteCache(packId).catch((e) => console.warn('Failed to clear remote cache', e));
     return;
@@ -274,6 +317,7 @@ export function clearPackRuntimeCache(packId?: string) {
   aggregateRuntimeCache.clear();
   aggregateLoadStack.clear();
   jsonArrayCache.clear();
+  sharedJsonCache.clear();
   packRefreshToken.clear();
   // 异步清除所有 IndexedDB 缓存
   idbClearRemoteCache().catch((e) => console.warn('Failed to clear all remote cache', e));
@@ -356,7 +400,10 @@ export function getPackBaseUrls(packId: string): string[] {
   if (source) {
     const mirrors = getSourceMirrorUrls(source);
     if (!mirrors.length) {
-      if (typeof source.aggregateDescriptor === 'string' && source.aggregateDescriptor.trim().length > 0) {
+      if (
+        typeof source.aggregateDescriptor === 'string' &&
+        source.aggregateDescriptor.trim().length > 0
+      ) {
         return [];
       }
       const safe = encodeURIComponent(packId);
@@ -910,14 +957,8 @@ function mergeItemExtensionsForAggregate(
     mergedJeiweb.wiki = { ...mergedWiki };
   }
 
-  const mergedWikiSources = mergeWikiForAggregate(
-    leftWiki?.sources,
-    rightWiki?.sources,
-  );
-  const mergedWikiMeta = mergeWikiForAggregate(
-    leftWiki?.meta,
-    rightWiki?.meta,
-  );
+  const mergedWikiSources = mergeWikiForAggregate(leftWiki?.sources, rightWiki?.sources);
+  const mergedWikiMeta = mergeWikiForAggregate(leftWiki?.meta, rightWiki?.meta);
   const mergedWikiRenderers = (() => {
     const out: JeiWebWikiRendererDef[] = [];
     const seen = new Set<string>();
@@ -958,10 +999,7 @@ function mergeItemExtensionsForAggregate(
   }
 
   const mergedJeiwebI18n = mergeItemI18nForAggregate(leftJeiweb?.i18n, rightJeiweb?.i18n);
-  const mergedJeiwebMeta = mergeWikiForAggregate(
-    leftJeiweb?.meta,
-    rightJeiweb?.meta,
-  );
+  const mergedJeiwebMeta = mergeWikiForAggregate(leftJeiweb?.meta, rightJeiweb?.meta);
   if (mergedJeiwebI18n) mergedJeiweb.i18n = mergedJeiwebI18n;
   if (mergedJeiwebMeta) mergedJeiweb.meta = mergedJeiwebMeta;
 
@@ -1228,7 +1266,9 @@ async function loadAggregatePack(
       const overrideMirrors = normalizeSourceMirrorUrls(entry.mirrors);
       const overrideDevMirrors = normalizeSourceMirrorUrls(entry.devMirrors);
       if (!overrideMirrors.length && !overrideDevMirrors.length) return;
-      const nextMirrors = overrideMirrors.length ? overrideMirrors : normalizeSourceMirrorUrls(nested?.mirrors);
+      const nextMirrors = overrideMirrors.length
+        ? overrideMirrors
+        : normalizeSourceMirrorUrls(nested?.mirrors);
       const nextDevMirrors = overrideDevMirrors.length
         ? overrideDevMirrors
         : normalizeSourceMirrorUrls(nested?.devMirrors);
@@ -1395,7 +1435,10 @@ type ManifestLoadResult = {
   manifest: PackManifest;
 };
 
-async function fetchManifestFromMirror(packId: string, baseUrl: string): Promise<ManifestLoadResult> {
+async function fetchManifestFromMirror(
+  packId: string,
+  baseUrl: string,
+): Promise<ManifestLoadResult> {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   try {
     const raw = await fetchJson(`${baseUrl}/manifest.json`, packId);
@@ -1421,7 +1464,10 @@ function buildManifestLoadError(
   }
   const details = failures
     .slice(0, 3)
-    .map(({ baseUrl, error }) => `${baseUrl}: ${error instanceof Error ? error.message : String(error)}`)
+    .map(
+      ({ baseUrl, error }) =>
+        `${baseUrl}: ${error instanceof Error ? error.message : String(error)}`,
+    )
     .join(' | ');
   const suffix = failures.length > 3 ? ` (+${failures.length - 3} more)` : '';
   return new Error(`Failed to load manifest for ${packId}. ${details}${suffix}`);
@@ -1514,7 +1560,11 @@ async function loadManifest(packId: string): Promise<PackManifest> {
   return task;
 }
 
-async function loadItems(base: string, manifest: PackManifest, onProgress?: (percent: number) => void): Promise<ItemDef[]> {
+async function loadItems(
+  base: string,
+  manifest: PackManifest,
+  onProgress?: (percent: number) => void,
+): Promise<ItemDef[]> {
   if (!manifest.files.items) return [];
 
   // 检查是否为目录模式（以 / 结尾）
@@ -1600,14 +1650,20 @@ function localSelectorToId(sel: string): string | null {
   return id ? id : null;
 }
 
-async function zipToPackData(zipBlob: Blob): Promise<{ pack: PackData; assets: { path: string; blob: Blob }[] }> {
+async function zipToPackData(
+  zipBlob: Blob,
+): Promise<{ pack: PackData; assets: { path: string; blob: Blob }[] }> {
   const zip = await JSZip.loadAsync(zipBlob);
   const manifestFile = zip.file(/manifest\.json$/i)[0];
   if (!manifestFile) throw new Error('manifest.json not found in zip');
   const manifest = assertPackManifest(JSON.parse(await manifestFile.async('string')), '$.manifest');
 
   const baseDir = manifestFile.name.replace(/manifest\.json$/i, '');
-  const readJsonArray = async <T>(rel: string | undefined, name: string, map: (v: unknown, i: number) => T) => {
+  const readJsonArray = async <T>(
+    rel: string | undefined,
+    name: string,
+    map: (v: unknown, i: number) => T,
+  ) => {
     if (!rel) return [] as T[];
     const file = zip.file(`${baseDir}${rel}`);
     if (!file) throw new Error(`Missing ${rel}`);
@@ -1644,7 +1700,9 @@ async function zipToPackData(zipBlob: Blob): Promise<{ pack: PackData; assets: {
 
   const items = manifest.files.items?.endsWith('/')
     ? await readItemsFromDir(manifest.files.items, manifest.files.itemsIndex!)
-    : await readJsonArray(manifest.files.items, 'items', (v, i) => assertItemDef(v, `$.items[${i}]`));
+    : await readJsonArray(manifest.files.items, 'items', (v, i) =>
+        assertItemDef(v, `$.items[${i}]`),
+      );
 
   const [tags, recipeTypes, recipes] = await Promise.all([
     readTags(manifest.files.tags),
@@ -1697,7 +1755,10 @@ async function zipToPackData(zipBlob: Blob): Promise<{ pack: PackData; assets: {
   return { pack, assets };
 }
 
-function resolveLocalPackAssetUrls(pack: PackData, assets: { path: string; blob: Blob }[]): RuntimePackLoadResult {
+function resolveLocalPackAssetUrls(
+  pack: PackData,
+  assets: { path: string; blob: Blob }[],
+): RuntimePackLoadResult {
   const base = `/packs/${encodeURIComponent(pack.manifest.packId)}/`;
   const urlByAbsolute = new Map<string, string>();
   const created: string[] = [];
@@ -1745,7 +1806,10 @@ export interface LoadProgress {
 
 export type ProgressCallback = (p: LoadProgress) => void;
 
-export async function loadRuntimePack(packIdOrLocal: string, onProgress?: ProgressCallback): Promise<RuntimePackLoadResult> {
+export async function loadRuntimePack(
+  packIdOrLocal: string,
+  onProgress?: ProgressCallback,
+): Promise<RuntimePackLoadResult> {
   const localId = localSelectorToId(packIdOrLocal);
   if (localId) {
     onProgress?.({ message: 'Loading local pack...', percent: 0 });
@@ -1767,7 +1831,7 @@ export async function loadRuntimePack(packIdOrLocal: string, onProgress?: Progre
   }
 
   const pack = await loadPack(packIdOrLocal, onProgress);
-  return { pack, dispose: () => { } };
+  return { pack, dispose: () => {} };
 }
 
 export async function loadPack(packId: string, onProgress?: ProgressCallback): Promise<PackData> {
@@ -1839,52 +1903,72 @@ export async function loadPack(packId: string, onProgress?: ProgressCallback): P
 
   const itemsLoader = async () => {
     if (manifest.files.itemsLite) {
-      return loadCached('itemsLite', async (cb) => {
-        const res = await loadItemsLite(base, manifest);
-        cb?.(1);
-        return res;
-      }, () => {
-        pItems = 1;
-        update('Loaded items (lite)');
-      });
+      return loadCached(
+        'itemsLite',
+        async (cb) => {
+          const res = await loadItemsLite(base, manifest);
+          cb?.(1);
+          return res;
+        },
+        () => {
+          pItems = 1;
+          update('Loaded items (lite)');
+        },
+      );
     }
-    return loadCached('items', (cb) => loadItems(base, manifest, cb), (p) => {
-      pItems = p;
-      update(`Loading items ${Math.round(p * 100)}%...`);
-    });
+    return loadCached(
+      'items',
+      (cb) => loadItems(base, manifest, cb),
+      (p) => {
+        pItems = p;
+        update(`Loading items ${Math.round(p * 100)}%...`);
+      },
+    );
   };
 
   const tagsLoader = async () => {
-    return loadCached('tags', async (cb) => {
-      const res = await loadTags(base, manifest);
-      cb?.(1);
-      return res;
-    }, () => {
-      pTags = 1;
-      update('Loaded tags');
-    });
+    return loadCached(
+      'tags',
+      async (cb) => {
+        const res = await loadTags(base, manifest);
+        cb?.(1);
+        return res;
+      },
+      () => {
+        pTags = 1;
+        update('Loaded tags');
+      },
+    );
   };
 
   const recipeTypesLoader = async () => {
-    return loadCached('recipeTypes', async (cb) => {
-      const res = await loadRecipeTypes(base, manifest);
-      cb?.(1);
-      return res;
-    }, () => {
-      pTypes = 1;
-      update('Loaded recipe types');
-    });
+    return loadCached(
+      'recipeTypes',
+      async (cb) => {
+        const res = await loadRecipeTypes(base, manifest);
+        cb?.(1);
+        return res;
+      },
+      () => {
+        pTypes = 1;
+        update('Loaded recipe types');
+      },
+    );
   };
 
   const recipesLoader = async () => {
-    return loadCached('recipes', async (cb) => {
-      const res = await loadRecipes(base, manifest);
-      cb?.(1);
-      return res;
-    }, () => {
-      pRecipes = 1;
-      update('Loaded recipes');
-    });
+    return loadCached(
+      'recipes',
+      async (cb) => {
+        const res = await loadRecipes(base, manifest);
+        cb?.(1);
+        return res;
+      },
+      () => {
+        pRecipes = 1;
+        update('Loaded recipes');
+      },
+    );
   };
 
   const [itemsMaybeLite, tags, recipeTypes, recipes] = await Promise.all([
@@ -1963,10 +2047,16 @@ export async function loadPackItemDetail(packId: string, detailPath: string): Pr
       : undefined;
     const existingMeta = isRecordLike(existingJeiweb?.meta) ? existingJeiweb.meta : undefined;
     const existingAggregateSources = Array.isArray(existingMeta?.aggregateDetailSources)
-      ? existingMeta.aggregateDetailSources.filter((entry): entry is string => typeof entry === 'string')
+      ? existingMeta.aggregateDetailSources.filter(
+          (entry): entry is string => typeof entry === 'string',
+        )
       : [];
     const mergedSources = Array.from(
-      new Set([detailRef.sourcePackId, ...Object.keys(mergedItem.wikis ?? {}), ...existingAggregateSources]),
+      new Set([
+        detailRef.sourcePackId,
+        ...Object.keys(mergedItem.wikis ?? {}),
+        ...existingAggregateSources,
+      ]),
     );
     mergedItem.extensions = {
       ...(mergedItem.extensions ?? {}),
@@ -1988,6 +2078,7 @@ export async function loadPackItemDetail(packId: string, detailPath: string): Pr
   const normalizedPath = detailPath.replace(/^\/+/, '');
   const raw = await resolveDetailRaw(packId, base, normalizedPath, 'item detail');
   const item = assertItemDef(raw, '$.itemDetail');
+  await hydrateJeiwebLocaleData(item, packId, base);
   resolveItemAssetUrls(item, base);
   const manifest = await loadManifest(packId);
   await ensurePackImageProxyTokens(manifest);
@@ -2028,6 +2119,39 @@ async function resolveDetailRaw(
     raw = await fetchJson(`${base}/${sourcePath}`, packId);
   }
   return raw;
+}
+
+async function hydrateJeiwebLocaleData(item: ItemDef, packId: string, base: string): Promise<void> {
+  const jeiweb = isRecordLike(item.extensions?.jeiweb) ? item.extensions.jeiweb : undefined;
+  const localeDataMap = isRecordLike(jeiweb?.localeData) ? jeiweb.localeData : undefined;
+  if (!localeDataMap) return;
+
+  await Promise.all(
+    Object.keys(localeDataMap).map(async (locale) => {
+      const localeEntry = localeDataMap[locale];
+      if (!isRecordLike(localeEntry)) return;
+      const raw = isRecordLike(localeEntry.raw) ? localeEntry.raw : undefined;
+      if (!raw) return;
+
+      const sharedContextPath =
+        typeof raw.sharedContextPath === 'string' ? raw.sharedContextPath.trim() : '';
+      if (!sharedContextPath) return;
+
+      const shared = await fetchSharedJson(base, packId, sharedContextPath);
+      if (!isRecordLike(shared)) return;
+
+      if (isRecordLike(shared.refs) && !isRecordLike(raw.refs)) {
+        raw.refs = shared.refs;
+      }
+      if (isRecordLike(shared.localNameMap) && !isRecordLike(raw.localNameMap)) {
+        raw.localNameMap = shared.localNameMap;
+      }
+      if (isRecordLike(shared.idToPackItemId) && !isRecordLike(raw.idToPackItemId)) {
+        raw.idToPackItemId = shared.idToPackItemId;
+      }
+      delete raw.sharedContextPath;
+    }),
+  );
 }
 
 export async function loadPackRecipeDetail(packId: string, detailPath: string): Promise<Recipe> {

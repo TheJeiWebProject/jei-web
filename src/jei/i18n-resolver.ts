@@ -5,10 +5,14 @@ import { normalizeTagId } from 'src/jei/tags/resolve';
 export function resolveItemLocale(item: ItemDef, locale: Language): void {
   const itemI18nMap = item.i18n;
   const extI18nMap = item.extensions?.jeiweb?.i18n;
-  if (!itemI18nMap && !extI18nMap) return;
+  const localeDataMap = item.extensions?.jeiweb?.localeData;
+  if (!itemI18nMap && !extI18nMap && !localeDataMap) return;
   const itemEntry = itemI18nMap ? (itemI18nMap[locale] ?? itemI18nMap['zh-CN']) : undefined;
   const extEntry = extI18nMap ? (extI18nMap[locale] ?? extI18nMap['zh-CN']) : undefined;
-  if (!itemEntry && !extEntry) return;
+  const localeDataEntry = localeDataMap
+    ? (localeDataMap[locale] ?? localeDataMap['zh-CN'])
+    : undefined;
+  if (!itemEntry && !extEntry && !localeDataEntry) return;
   const entry = {
     ...(extEntry ?? {}),
     ...(itemEntry ?? {}),
@@ -20,8 +24,9 @@ export function resolveItemLocale(item: ItemDef, locale: Language): void {
   if (entry.description !== undefined) {
     item.description = entry.description;
   }
-  if (entry.wiki !== undefined) {
-    item.wiki = entry.wiki;
+  const localizedWiki = localeDataEntry?.wiki ?? entry.wiki;
+  if (localizedWiki !== undefined) {
+    item.wiki = localizedWiki;
   }
   if (entry.wikis !== undefined && typeof entry.wikis === 'object' && entry.wikis !== null) {
     const currentWikis =
@@ -32,6 +37,11 @@ export function resolveItemLocale(item: ItemDef, locale: Language): void {
     };
   }
   const mergedSources = {
+    ...(localeDataEntry?.sources &&
+    typeof localeDataEntry.sources === 'object' &&
+    !Array.isArray(localeDataEntry.sources)
+      ? localeDataEntry.sources
+      : {}),
     ...(entry.source && typeof entry.source === 'object' && !Array.isArray(entry.source)
       ? entry.source
       : {}),
@@ -42,8 +52,8 @@ export function resolveItemLocale(item: ItemDef, locale: Language): void {
   if (Object.keys(mergedSources).length > 0) {
     const currentSources =
       item.extensions?.jeiweb?.wiki?.sources &&
-        typeof item.extensions.jeiweb.wiki.sources === 'object' &&
-        !Array.isArray(item.extensions.jeiweb.wiki.sources)
+      typeof item.extensions.jeiweb.wiki.sources === 'object' &&
+      !Array.isArray(item.extensions.jeiweb.wiki.sources)
         ? item.extensions.jeiweb.wiki.sources
         : {};
     item.extensions = {
@@ -104,7 +114,9 @@ export function resolveTagDef(
   defaultNamespace?: string,
 ): TagDef | undefined {
   if (!tags) return undefined;
-  const raw = String(tagId || '').replace(/^#/, '').trim();
+  const raw = String(tagId || '')
+    .replace(/^#/, '')
+    .trim();
   if (!raw) return undefined;
 
   const candidates = new Set<string>([tagId, raw]);

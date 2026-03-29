@@ -32,8 +32,15 @@ export interface ItemI18nEntry {
   name: string;
   description?: string;
   wiki?: Record<string, unknown>;
+  raw?: unknown;
   source?: Record<string, unknown>;
   wikis?: Record<string, Record<string, unknown>>;
+  sources?: Record<string, unknown>;
+}
+
+export interface JeiWebLocaleDataEntry {
+  wiki?: Record<string, unknown>;
+  raw?: unknown;
   sources?: Record<string, unknown>;
 }
 
@@ -45,6 +52,7 @@ export interface ItemExtensions {
       meta?: Record<string, unknown>;
     };
     i18n?: Record<string, ItemI18nEntry>;
+    localeData?: Record<string, JeiWebLocaleDataEntry>;
     meta?: Record<string, unknown>;
   };
   [extensionId: string]: unknown;
@@ -126,6 +134,7 @@ export interface ParamSchemaEntry {
 export interface RecipeTypeDef {
   key: string;
   displayName: string;
+  category?: string;
   renderer: string;
   plannerPriority?: number;
   machine?: RecipeTypeMachine | RecipeTypeMachine[];

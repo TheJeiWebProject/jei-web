@@ -1,16 +1,38 @@
 # About
 
 ## Build
-- Version: 268f948-dirty
-- Commit: 268f948 (268f948874884dfca3320382215fb30ab08d00a8)
-- Commit count: 135
-- Subject: feat: enhance search functionality with advanced filtering options
+- Version: 080e46e-dirty
+- Commit: 080e46e (080e46e58a0ef1e953a82581159516a984a0ef2e)
+- Commit count: 139
+- Subject: feat: 添加持久化历史记录功能，允许用户保存历史记录设置
 - Author: AndreaFrederica
-- Date: 2026-03-23T00:58:57+08:00
-- Generated at: 2026-03-23T19:51:18.837Z
+- Date: 2026-03-25T21:15:18+08:00
+- Generated at: 2026-03-29T21:16:34.838Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r139 (2026-03-25T21:15:18+08:00)
+- 080e46e
+  feat: 添加持久化历史记录功能，允许用户保存历史记录设置
+
+### r138 (2026-03-24T06:54:45+08:00)
+- 5d0802a
+  feat: 添加搜索功能的工作线程支持，优化搜索性能和响应速度
+
+### r137 (2026-03-24T06:54:32+08:00)
+- cd5eb06
+  feat: enhance pack mirror handling and add wiki debug information
+
+### r136 (2026-03-24T05:13:34+08:00)
+- cf6975a
+  feat: add I18nSettingsPanel for language settings and i18n coverage statistics
+  
+  - Introduced I18nSettingsPanel.vue to manage language settings and display i18n coverage.
+  - Updated BottomBar.vue to utilize getTagDisplayName for tag display.
+  - Refactored CenterPanel.vue to use translation for titles.
+  - Enhanced RecipeContentView.vue with structured wiki renderer headers and improved tag display.
+  - Updated SettingsDialog.vue to include I18nSettingsPanel and manage language updates.
 
 ### r135 (2026-03-23T00:58:57+08:00)
 - 268f948

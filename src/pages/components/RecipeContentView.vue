@@ -124,6 +124,26 @@
               >
                 <SimpleWikiRenderer :source="renderer.simpleSource" />
               </div>
+
+              <div
+                v-else-if="renderer.type === 'commonmark'"
+                class="wiki-commonmark"
+                @click="handleWikiDescriptionClick"
+              >
+                <CommonMarkWikiRenderer :source="renderer.commonmarkSource" />
+              </div>
+
+              <div
+                v-else-if="renderer.type === 'warfarin-raw-operator'"
+                class="wiki-warfarin-raw"
+                @click="handleWikiDescriptionClick"
+              >
+                <WarfarinEndpointRenderer
+                  :source="renderer.rawSource"
+                  :endpoint="renderer.warfarinEndpoint"
+                  :item-defs-by-key-hash="itemDefsByKeyHash"
+                />
+              </div>
             </section>
           </div>
           <q-separator />
@@ -494,6 +514,8 @@ import CraftingPlannerView from 'src/jei/components/CraftingPlannerView.vue';
 import WikiDocument from 'src/components/wiki/WikiDocument.vue';
 import WikiChapterGroup from 'src/components/wiki/layout/WikiChapterGroup.vue';
 import SimpleWikiRenderer from 'src/components/wiki/SimpleWikiRenderer.vue';
+import CommonMarkWikiRenderer from 'src/components/wiki/CommonMarkWikiRenderer.vue';
+import WarfarinEndpointRenderer from 'src/components/wiki/warfarin/WarfarinEndpointRenderer.vue';
 import InlineImageViewer from 'src/components/InlineImageViewer.vue';
 import PluginIframeTab from './PluginIframeTab.vue';
 import { useCachedImageUrl, useRuntimeImageUrl } from 'src/jei/pack/runtimeImage';
@@ -594,7 +616,13 @@ const markdownRenderer = new MarkdownIt({
   typographer: true,
 });
 
-type SupportedWikiRendererType = 'structured-wiki' | 'simple-v1' | 'markdown' | 'description';
+type SupportedWikiRendererType =
+  | 'structured-wiki'
+  | 'simple-v1'
+  | 'markdown'
+  | 'description'
+  | 'commonmark'
+  | 'warfarin-raw-operator';
 
 interface StructuredWikiRenderData {
   briefDescriptionDocument: Document | null;
@@ -614,6 +642,9 @@ interface PreparedWikiRenderer {
   sourcePackId?: string;
   markdownHtml?: string;
   simpleSource?: unknown;
+  commonmarkSource?: unknown;
+  rawSource?: unknown;
+  warfarinEndpoint?: string;
   structured?: StructuredWikiRenderData;
 }
 
@@ -705,10 +736,30 @@ function normalizeRendererType(rawType: unknown): SupportedWikiRendererType | nu
   if (type === 'markdown' || type === 'md') {
     return 'markdown';
   }
+  if (type === 'commonmark' || type === 'commonmark-wiki' || type === 'cm') {
+    return 'commonmark';
+  }
+  if (
+    type === 'warfarin-raw-operator' ||
+    type === 'warfarin-operator-raw' ||
+    type === 'warfarin-raw'
+  ) {
+    return 'warfarin-raw-operator';
+  }
   if (type === 'description' || type === 'legacy-description') {
     return 'description';
   }
   return null;
+}
+
+function hasWarfarinOperatorRawContent(raw: unknown): boolean {
+  if (!isRecordLike(raw)) return false;
+  if (isRecordLike(raw.list) && isRecordLike(raw.detail)) return true;
+  if (isRecordLike(raw.raw)) {
+    const nested = raw.raw;
+    return isRecordLike(nested.list) && isRecordLike(nested.detail);
+  }
+  return false;
 }
 
 function pickTextContent(raw: unknown): string {
@@ -770,12 +821,20 @@ function getCurrentItemLocaleEntry(): Record<string, unknown> | undefined {
   if (!item) return undefined;
   const itemI18nMap = item.i18n;
   const extI18nMap = item.extensions?.jeiweb?.i18n;
+  const localeDataMap = isRecordLike(item.extensions?.jeiweb?.localeData)
+    ? item.extensions.jeiweb.localeData
+    : null;
   const locale = settingsStore.language;
   const itemEntry =
     itemI18nMap && isRecordLike(itemI18nMap) ? (itemI18nMap[locale] ?? itemI18nMap['zh-CN']) : null;
   const extEntry =
     extI18nMap && isRecordLike(extI18nMap) ? (extI18nMap[locale] ?? extI18nMap['zh-CN']) : null;
+  const localeDataEntry =
+    localeDataMap && isRecordLike(localeDataMap)
+      ? (localeDataMap[locale] ?? localeDataMap['zh-CN'])
+      : null;
   const merged = {
+    ...(isRecordLike(localeDataEntry) ? localeDataEntry : {}),
     ...(isRecordLike(extEntry) ? extEntry : {}),
     ...(isRecordLike(itemEntry) ? itemEntry : {}),
   };
@@ -785,6 +844,7 @@ function getCurrentItemLocaleEntry(): Record<string, unknown> | undefined {
 function getCurrentItemLocalizedSourceByRef(sourceRef: string): unknown {
   const entry = getCurrentItemLocaleEntry();
   if (!entry) return undefined;
+  if (sourceRef === '$locale.raw' || sourceRef === '$legacy.raw') return entry.raw;
   if (isRecordLike(entry.wikis) && sourceRef in entry.wikis) return entry.wikis[sourceRef];
   if (isRecordLike(entry.sources) && sourceRef in entry.sources) return entry.sources[sourceRef];
   if (isRecordLike(entry.source) && sourceRef in entry.source) return entry.source[sourceRef];
@@ -798,6 +858,8 @@ function getRendererDefaultTitle(type: SupportedWikiRendererType): string {
   if (type === 'structured-wiki') return 'Structured Wiki';
   if (type === 'simple-v1') return 'Simple Wiki';
   if (type === 'markdown') return 'Markdown';
+  if (type === 'commonmark') return 'CommonMark Wiki';
+  if (type === 'warfarin-raw-operator') return 'Warfarin Raw Wiki';
   return 'Description';
 }
 
@@ -819,6 +881,7 @@ function describeRendererSource(
   if (usesInlineData) return 'entry.data';
   if (sourceRef === '$legacy.wiki') return '$legacy.wiki';
   if (sourceRef === '$legacy.description') return '$legacy.description';
+  if (sourceRef === '$locale.raw' || sourceRef === '$legacy.raw') return '$locale.raw';
   if (sourceRef) {
     const localized = getCurrentItemLocalizedSourceByRef(sourceRef);
     if (localized !== undefined) return `i18n.source:${sourceRef}`;
@@ -862,6 +925,9 @@ function resolveRendererSourceFromRef(
   if (!sourceRef) return undefined;
   if (sourceRef === '$legacy.wiki') return resolveLegacyRendererSource('simple-v1');
   if (sourceRef === '$legacy.description') return resolveLegacyRendererSource('description');
+  if (sourceRef === '$locale.raw' || sourceRef === '$legacy.raw') {
+    return getCurrentItemLocaleEntry()?.raw;
+  }
   const localizedByRef = getCurrentItemLocalizedSourceByRef(sourceRef);
   if (localizedByRef !== undefined) return localizedByRef;
   if (type === 'structured-wiki') {
@@ -991,6 +1057,49 @@ const extensionWikiRenderers = computed<PreparedWikiRenderer[]>(() => {
             sourceLabel,
             ...(sourcePackId ? { sourcePackId } : {}),
             simpleSource: source,
+          },
+        };
+      }
+
+      if (type === 'commonmark') {
+        const cmText = pickTextContent(source);
+        if (!cmText) return null;
+        return {
+          index,
+          renderer: {
+            id: entry.id || `renderer-${index}`,
+            type,
+            order,
+            ...(title !== undefined ? { title } : {}),
+            defaultTitle: getRendererDefaultTitle(type),
+            sourceTitle: buildRendererSourceTitle(sourcePackId),
+            sourceLabel,
+            ...(sourcePackId ? { sourcePackId } : {}),
+            commonmarkSource: source,
+          },
+        };
+      }
+
+      if (type === 'warfarin-raw-operator') {
+        if (!hasWarfarinOperatorRawContent(source)) return null;
+        const wikiMeta = props.currentItemDef?.extensions?.jeiweb?.wiki?.meta;
+        const warfarinEndpoint =
+          isRecordLike(wikiMeta) && typeof wikiMeta.endpoint === 'string'
+            ? wikiMeta.endpoint
+            : undefined;
+        return {
+          index,
+          renderer: {
+            id: entry.id || `renderer-${index}`,
+            type,
+            order,
+            ...(title !== undefined ? { title } : {}),
+            defaultTitle: getRendererDefaultTitle(type),
+            sourceTitle: buildRendererSourceTitle(sourcePackId),
+            sourceLabel,
+            ...(sourcePackId ? { sourcePackId } : {}),
+            rawSource: source,
+            ...(warfarinEndpoint ? { warfarinEndpoint } : {}),
           },
         };
       }

@@ -278,6 +278,8 @@ export function assertRecipeTypeDef(value: unknown, jsonPath: string): RecipeTyp
     displayName: assertString(obj.displayName, `${jsonPath}.displayName`),
     renderer: assertString(obj.renderer, `${jsonPath}.renderer`),
   };
+  const category = assertOptionalString(obj.category, `${jsonPath}.category`);
+  if (category !== undefined) out.category = category;
   if (plannerPriority !== undefined) out.plannerPriority = plannerPriority;
   if (machine !== undefined) out.machine = machine;
   if (slots !== undefined) out.slots = slots;
