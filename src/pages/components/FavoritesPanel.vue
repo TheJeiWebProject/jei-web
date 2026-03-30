@@ -81,13 +81,20 @@
           </q-list>
           <q-separator class="q-my-sm" />
         </div>
-        <div v-if="favoriteItems.length" class="jei-grid">
+        <div
+          v-if="favoriteItems.length"
+          ref="listGridEl"
+          :class="['jei-grid', { 'jei-grid--classic': iconDisplayMode === 'jei_classic' }]"
+        >
           <div v-if="firstPagedFavoriteItem" ref="sampleCellEl">
             <q-card
               :key="firstPagedFavoriteItem.keyHash"
               flat
-              bordered
-              class="jei-grid__cell cursor-pointer"
+              :bordered="iconDisplayMode !== 'jei_classic'"
+              :class="[
+                'jei-grid__cell cursor-pointer',
+                { 'jei-grid__cell--classic': iconDisplayMode === 'jei_classic' },
+              ]"
               v-touch-hold:600="
                 (evt: unknown) => $emit('touch-hold', evt, firstPagedFavoriteItem?.keyHash ?? '')
               "
@@ -111,13 +118,19 @@
                 :size="isMobile ? 'md' : 'sm'"
                 icon="star"
                 color="amber"
-                class="jei-grid__fav"
+                :class="[
+                  'jei-grid__fav',
+                  { 'jei-grid__fav--classic': iconDisplayMode === 'jei_classic' },
+                ]"
                 @click.stop="$emit('toggle-favorite', firstPagedFavoriteItem?.keyHash ?? '')"
                 @mousedown.stop
                 @touchstart.stop
                 style="z-index: 1"
               />
-              <div class="jei-grid__cell-body">
+              <div
+                class="jei-grid__cell-body"
+                :class="{ 'jei-grid__cell-body--classic': iconDisplayMode === 'jei_classic' }"
+              >
                 <stack-view
                   :content="{
                     kind: 'item',
@@ -131,6 +144,7 @@
                       : {}),
                   }"
                   :item-defs-by-key-hash="itemDefsByKeyHash"
+                  :icon-display-mode="iconDisplayMode"
                   :show-amount="false"
                   :lazy-visual="true"
                 />
@@ -142,8 +156,11 @@
             v-for="it in restPagedFavoriteItems"
             :key="it.keyHash"
             flat
-            bordered
-            class="jei-grid__cell cursor-pointer"
+            :bordered="iconDisplayMode !== 'jei_classic'"
+            :class="[
+              'jei-grid__cell cursor-pointer',
+              { 'jei-grid__cell--classic': iconDisplayMode === 'jei_classic' },
+            ]"
             v-touch-hold:600="(evt: unknown) => $emit('touch-hold', evt, it.keyHash)"
             @contextmenu.prevent="$emit('context-menu', $event, it.keyHash)"
             @mouseenter="
@@ -163,13 +180,19 @@
               :size="isMobile ? 'md' : 'sm'"
               icon="star"
               color="amber"
-              class="jei-grid__fav"
+              :class="[
+                'jei-grid__fav',
+                { 'jei-grid__fav--classic': iconDisplayMode === 'jei_classic' },
+              ]"
               @click.stop="$emit('toggle-favorite', it.keyHash)"
               @mousedown.stop
               @touchstart.stop
               style="z-index: 1"
             />
-            <div class="jei-grid__cell-body">
+            <div
+              class="jei-grid__cell-body"
+              :class="{ 'jei-grid__cell-body--classic': iconDisplayMode === 'jei_classic' }"
+            >
               <stack-view
                 :content="{
                   kind: 'item',
@@ -179,6 +202,7 @@
                   ...(it.def.key.nbt !== undefined ? { nbt: it.def.key.nbt } : {}),
                 }"
                 :item-defs-by-key-hash="itemDefsByKeyHash"
+                :icon-display-mode="iconDisplayMode"
                 :show-amount="false"
                 :lazy-visual="true"
               />
@@ -210,6 +234,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { ItemDef, ItemKey } from 'src/jei/types';
 import StackView from 'src/jei/components/StackView.vue';
 import { useI18n } from 'vue-i18n';
+import type { ItemIconDisplayMode } from 'src/stores/settings';
 
 const { t } = useI18n();
 
@@ -233,21 +258,30 @@ const props = defineProps<{
   favoritePageSizeMin: number;
   favoritePageSizeMax: number;
   itemDefsByKeyHash: Record<string, ItemDef>;
+  iconDisplayMode: ItemIconDisplayMode;
 }>();
 
 const favoritePage = ref(1);
 const favoritePageSize = ref(24);
 const measuredCellHeight = ref(84);
 const gridGap = 8;
-const gridColumns = 2;
+const CLASSIC_GRID_MIN_CELL_WIDTH = 52;
+const MODERN_GRID_COLUMNS = 2;
 
 const listScrollEl = ref<HTMLElement | null>(null);
 const savedPlansEl = ref<HTMLElement | null>(null);
+const listGridEl = ref<HTMLElement | null>(null);
 const sampleCellEl = ref<HTMLElement | null>(null);
+const gridColumns = computed(() => {
+  if (props.iconDisplayMode !== 'jei_classic') return MODERN_GRID_COLUMNS;
+  const gridWidth = listGridEl.value?.clientWidth ?? listScrollEl.value?.clientWidth ?? 0;
+  if (!gridWidth) return 4;
+  return Math.max(1, Math.floor((gridWidth + 6) / (CLASSIC_GRID_MIN_CELL_WIDTH + 6)));
+});
 const favoritePageSizeMin = computed(() => {
   const n = Number(props.favoritePageSizeMin);
-  if (!Number.isFinite(n)) return gridColumns;
-  return Math.max(gridColumns, Math.floor(n));
+  if (!Number.isFinite(n)) return gridColumns.value;
+  return Math.max(gridColumns.value, Math.floor(n));
 });
 const favoritePageSizeMax = computed(() => {
   const n = Number(props.favoritePageSizeMax);
@@ -329,7 +363,7 @@ function recomputeFavoritePageSize(explicitHeight?: number): void {
 
   const size = Math.min(
     favoritePageSizeMax.value,
-    Math.max(favoritePageSizeMin.value, rows * gridColumns),
+    Math.max(favoritePageSizeMin.value, rows * gridColumns.value),
   );
   if (favoritePageSize.value !== size) favoritePageSize.value = size;
 }
@@ -367,6 +401,13 @@ watch(
 );
 
 watch(
+  () => props.iconDisplayMode,
+  () => {
+    scheduleRecomputeFavoritePageSize();
+  },
+);
+
+watch(
   () => [props.collapsed, props.mobileTab, props.isMobile] as const,
   () => {
     if (!props.collapsed) scheduleRecomputeFavoritePageSize();
@@ -388,6 +429,7 @@ onMounted(() => {
   });
   if (listScrollEl.value) resizeObserver.value.observe(listScrollEl.value);
   if (savedPlansEl.value) resizeObserver.value.observe(savedPlansEl.value);
+  if (listGridEl.value) resizeObserver.value.observe(listGridEl.value);
   scheduleRecomputeFavoritePageSize();
 });
 
@@ -399,6 +441,13 @@ watch(listScrollEl, (el, oldEl) => {
 });
 
 watch(savedPlansEl, (el, oldEl) => {
+  if (!resizeObserver.value) return;
+  if (oldEl) resizeObserver.value.unobserve(oldEl);
+  if (el) resizeObserver.value.observe(el);
+  scheduleRecomputeFavoritePageSize();
+});
+
+watch(listGridEl, (el, oldEl) => {
   if (!resizeObserver.value) return;
   if (oldEl) resizeObserver.value.unobserve(oldEl);
   if (el) resizeObserver.value.observe(el);
@@ -490,10 +539,22 @@ defineEmits<{
   gap: 8px;
 }
 
+.jei-grid--classic {
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+}
+
 .jei-grid__cell {
   box-sizing: border-box;
   padding: 8px;
   position: relative;
+}
+
+.jei-grid__cell--classic {
+  padding: 6px 4px 4px;
+  min-height: 46px;
+  background: transparent;
+  box-shadow: none;
 }
 
 .jei-grid__fav {
@@ -502,8 +563,22 @@ defineEmits<{
   right: 4px;
 }
 
+.jei-grid__fav--classic {
+  top: 0;
+  right: 0;
+  transform: scale(0.72);
+  transform-origin: top right;
+}
+
 .jei-grid__cell-body {
   min-width: 0;
+}
+
+.jei-grid__cell-body--classic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
 }
 
 .jei-grid__cell.placeholder {

@@ -364,6 +364,66 @@
                 </q-card-section>
               </q-card>
 
+              <q-card v-if="showSection('appearance')" flat bordered>
+                <q-card-section>
+                  <div class="text-subtitle2 q-mb-sm">{{ t('sectionAppearance') }}</div>
+                  <div class="q-gutter-y-sm">
+                    <q-select
+                      dense
+                      outlined
+                      emit-value
+                      map-options
+                      :label="t('darkMode')"
+                      :options="[
+                        { label: t('auto'), value: 'auto' },
+                        { label: t('light'), value: 'light' },
+                        { label: t('dark'), value: 'dark' },
+                      ]"
+                      :model-value="darkMode"
+                      @update:model-value="
+                        $emit('update:dark-mode', ($event as 'auto' | 'light' | 'dark') ?? 'auto')
+                      "
+                    />
+                    <q-select
+                      dense
+                      outlined
+                      emit-value
+                      map-options
+                      :label="t('itemListIconDisplayMode')"
+                      :options="[
+                        { label: t('iconDisplayModeModern'), value: 'modern' },
+                        { label: t('iconDisplayModeJeiClassic'), value: 'jei_classic' },
+                      ]"
+                      :model-value="itemListIconDisplayMode"
+                      @update:model-value="
+                        $emit(
+                          'update:item-list-icon-display-mode',
+                          ($event as 'modern' | 'jei_classic') ?? 'modern',
+                        )
+                      "
+                    />
+                    <q-select
+                      dense
+                      outlined
+                      emit-value
+                      map-options
+                      :label="t('favoritesIconDisplayMode')"
+                      :options="[
+                        { label: t('iconDisplayModeModern'), value: 'modern' },
+                        { label: t('iconDisplayModeJeiClassic'), value: 'jei_classic' },
+                      ]"
+                      :model-value="favoritesIconDisplayMode"
+                      @update:model-value="
+                        $emit(
+                          'update:favorites-icon-display-mode',
+                          ($event as 'modern' | 'jei_classic') ?? 'modern',
+                        )
+                      "
+                    />
+                  </div>
+                </q-card-section>
+              </q-card>
+
               <q-card v-if="showSection('keybindings')" flat bordered>
                 <q-card-section>
                   <div class="text-subtitle2 q-mb-sm">{{ t('keybindings') }}</div>
@@ -683,12 +743,20 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { KeyAction, KeyBinding } from 'src/stores/keybindings';
 import type { ItemDef } from 'src/jei/types';
-import type { Language } from 'src/stores/settings';
+import type { DarkMode, ItemIconDisplayMode, Language } from 'src/stores/settings';
 import I18nSettingsPanel from './I18nSettingsPanel.vue';
 
 const { t } = useI18n();
 
-type SectionKey = 'plugins' | 'general' | 'keybindings' | 'data' | 'mirror' | 'proxy' | 'i18n';
+type SectionKey =
+  | 'plugins'
+  | 'general'
+  | 'appearance'
+  | 'keybindings'
+  | 'data'
+  | 'mirror'
+  | 'proxy'
+  | 'i18n';
 
 const sectionDefs: Array<{ key: SectionKey; label: string; keywords: string[] }> = [
   { key: 'plugins', label: t('sectionPlugins'), keywords: ['插件', 'plugin', '扩展', 'tab'] },
@@ -696,6 +764,11 @@ const sectionDefs: Array<{ key: SectionKey; label: string; keywords: string[] }>
     key: 'general',
     label: t('sectionGeneral'),
     keywords: ['基础', '显示', '调试', '快捷键', '历史'],
+  },
+  {
+    key: 'appearance',
+    label: t('sectionAppearance'),
+    keywords: ['ui', '风格', '主题', '图标', 'classic', 'modern', '外观', 'appearance'],
   },
   {
     key: 'keybindings',
@@ -717,6 +790,7 @@ const props = defineProps<{
   historyLimit: number;
   favoritePageSizeMin: number;
   favoritePageSizeMax: number;
+  darkMode: DarkMode;
   debugLayout: boolean;
   debugNavPanel: boolean;
   showLoadingOverlay: boolean;
@@ -726,6 +800,8 @@ const props = defineProps<{
   lineIntermediateColoring: boolean;
   productionLineRenderer: 'vue_flow' | 'g6';
   quantFlowRenderer: 'nodes' | 'sankey';
+  itemListIconDisplayMode: ItemIconDisplayMode;
+  favoritesIconDisplayMode: ItemIconDisplayMode;
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
   favoritesOpensNewStack: boolean;
@@ -792,6 +868,7 @@ const emit = defineEmits<{
   'update:favorites-page-size-min': [value: number];
   'update:favorites-page-size-max': [value: number];
   'reset:favorites-page-size-bounds': [];
+  'update:dark-mode': [value: DarkMode];
   'update:debug-layout': [value: boolean];
   'update:debug-nav-panel': [value: boolean];
   'update:show-loading-overlay': [value: boolean];
@@ -801,6 +878,8 @@ const emit = defineEmits<{
   'update:line-intermediate-coloring': [value: boolean];
   'update:production-line-renderer': [value: 'vue_flow' | 'g6'];
   'update:quant-flow-renderer': [value: 'nodes' | 'sankey'];
+  'update:item-list-icon-display-mode': [value: ItemIconDisplayMode];
+  'update:favorites-icon-display-mode': [value: ItemIconDisplayMode];
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
   'update:recipe-slot-show-name': [value: boolean];
   'update:favorites-open-stack': [value: boolean];

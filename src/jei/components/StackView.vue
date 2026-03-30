@@ -5,6 +5,7 @@
     :class="{
       'stack-view--clickable': clickable,
       'stack-view--slot': props.variant === 'slot',
+      'stack-view--jei-classic': props.iconDisplayMode === 'jei_classic',
     }"
     @click="onClick"
     @mouseenter="onMouseEnter"
@@ -36,8 +37,8 @@
       ></div>
       <q-icon v-else :name="fallbackIcon" size="22px" class="stack-view__icon-fallback" />
       <div class="stack-view__text">
-        <div v-if="props.showName" class="stack-view__name">{{ displayName }}</div>
-        <div v-if="props.showSubtitle" class="stack-view__subline">
+        <div v-if="effectiveShowName" class="stack-view__name">{{ displayName }}</div>
+        <div v-if="effectiveShowSubtitle" class="stack-view__subline">
           <span v-if="rarityLabel" class="stack-view__rarity" :style="rarityStyle">
             {{ rarityLabel }}
           </span>
@@ -51,7 +52,7 @@
         </div>
       </div>
     </div>
-    <q-badge v-if="badgeText" color="primary" class="stack-view__badge">{{ badgeText }}</q-badge>
+    <q-badge v-if="showBadge" color="primary" class="stack-view__badge">{{ badgeText }}</q-badge>
     <q-tooltip v-if="tooltipEnabled" ref="tooltipRef" max-width="420px">
       <div class="stack-tooltip">
         <div class="stack-tooltip__title">{{ tooltipTitle }}</div>
@@ -79,6 +80,7 @@ const props = withDefaults(
     content: SlotContent | undefined;
     itemDefsByKeyHash: Record<string, ItemDef>;
     variant?: 'list' | 'slot';
+    iconDisplayMode?: 'modern' | 'jei_classic';
     showName?: boolean;
     showSubtitle?: boolean;
     showAmount?: boolean;
@@ -86,6 +88,7 @@ const props = withDefaults(
   }>(),
   {
     variant: 'list',
+    iconDisplayMode: 'modern',
     showName: true,
     showSubtitle: true,
     showAmount: true,
@@ -288,6 +291,16 @@ const subtitle = computed(() => {
   return amountText;
 });
 
+const effectiveShowName = computed(
+  () => props.iconDisplayMode !== 'jei_classic' && props.showName,
+);
+
+const effectiveShowSubtitle = computed(
+  () => props.iconDisplayMode !== 'jei_classic' && props.showSubtitle,
+);
+
+const showBadge = computed(() => props.iconDisplayMode !== 'jei_classic' && !!badgeText.value);
+
 const fallbackIcon = computed(() => {
   const s = stack.value;
   if (!s) return 'help';
@@ -441,6 +454,11 @@ function onTouchHold(evt: unknown) {
   text-decoration: underline;
 }
 
+.stack-view--jei-classic {
+  justify-content: center;
+  gap: 0;
+}
+
 .stack-view__main {
   display: flex;
   align-items: center;
@@ -511,6 +529,26 @@ function onTouchHold(evt: unknown) {
 
 .stack-view__badge {
   flex: 0 0 auto;
+}
+
+.stack-view--jei-classic .stack-view__main {
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+}
+
+.stack-view--jei-classic .stack-view__text {
+  display: none;
+}
+
+.stack-view--jei-classic .stack-view__badge {
+  display: none;
+}
+
+.stack-view--jei-classic .stack-view__icon,
+.stack-view--jei-classic .stack-view__icon-fallback {
+  width: 32px;
+  height: 32px;
 }
 
 .stack-view--slot {

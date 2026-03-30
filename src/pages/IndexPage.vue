@@ -46,6 +46,7 @@
         :favorite-page-size-min="settingsStore.favoritePageSizeMin"
         :favorite-page-size-max="settingsStore.favoritePageSizeMax"
         :item-defs-by-key-hash="itemDefsByKeyHash"
+        :icon-display-mode="settingsStore.favoritesIconDisplayMode"
         @update:collapsed="settingsStore.setFavoritesCollapsed($event)"
         @update:hovered-key-hash="hoveredKeyHash = $event"
         @update:hovered-source="hoveredSource = $event"
@@ -129,6 +130,7 @@
         :measured-cell-height="measuredCellHeight"
         :item-defs-by-key-hash="itemDefsByKeyHash"
         :favorites="favorites"
+        :icon-display-mode="settingsStore.itemListIconDisplayMode"
         @update:hovered-key-hash="hoveredKeyHash = $event"
         @update:hovered-source="hoveredSource = $event"
         @item-click="openDialogByKeyHash"
@@ -184,6 +186,8 @@
       :favorite-page-size-max="settingsStore.favoritePageSizeMax"
       @update:favorites-page-size-max="settingsStore.setFavoritePageSizeMax($event)"
       @reset:favorites-page-size-bounds="settingsStore.resetFavoritePageSizeBounds()"
+      :dark-mode="settingsStore.darkMode"
+      @update:dark-mode="settingsStore.setDarkMode($event)"
       :debug-layout="settingsStore.debugLayout"
       @update:debug-layout="settingsStore.setDebugLayout($event)"
       :debug-nav-panel="settingsStore.debugNavPanel"
@@ -202,6 +206,10 @@
       @update:production-line-renderer="settingsStore.setProductionLineRenderer($event)"
       :quant-flow-renderer="settingsStore.quantFlowRenderer"
       @update:quant-flow-renderer="settingsStore.setQuantFlowRenderer($event)"
+      :item-list-icon-display-mode="settingsStore.itemListIconDisplayMode"
+      @update:item-list-icon-display-mode="settingsStore.setItemListIconDisplayMode($event)"
+      :favorites-icon-display-mode="settingsStore.favoritesIconDisplayMode"
+      @update:favorites-icon-display-mode="settingsStore.setFavoritesIconDisplayMode($event)"
       :recipe-view-mode="settingsStore.recipeViewMode"
       @update:recipe-view-mode="settingsStore.setRecipeViewMode($event)"
       :recipe-slot-show-name="settingsStore.recipeSlotShowName"
@@ -593,7 +601,8 @@ const filterDisabled = computed(() => loading.value || !!error.value);
 const page = ref(1);
 const measuredCellHeight = ref(84);
 const gridGap = 8;
-const gridColumns = 2;
+const MODERN_GRID_COLUMNS = 2;
+const CLASSIC_GRID_MIN_CELL_WIDTH = 52;
 
 const pageSize = ref(120);
 
@@ -1937,6 +1946,12 @@ const itemListPanelRef = ref<InstanceType<typeof ItemListPanel> | null>(null);
 const listScrollEl = computed(() => itemListPanelRef.value?.listScrollEl ?? null);
 const listGridEl = computed(() => itemListPanelRef.value?.listGridEl ?? null);
 const sampleCellEl = computed(() => itemListPanelRef.value?.sampleCellEl ?? null);
+const listGridColumns = computed(() => {
+  if (settingsStore.itemListIconDisplayMode !== 'jei_classic') return MODERN_GRID_COLUMNS;
+  const gridWidth = listGridEl.value?.clientWidth ?? listScrollEl.value?.clientWidth ?? 0;
+  if (!gridWidth) return 6;
+  return Math.max(1, Math.floor((gridWidth + 6) / (CLASSIC_GRID_MIN_CELL_WIDTH + 6)));
+});
 
 const debugMetrics = ref({
   containerClientHeight: 0,
@@ -1994,7 +2009,7 @@ function scheduleValidate() {
       const gridHeight = Math.ceil(grid.getBoundingClientRect().height);
       debugMetrics.value.gridHeight = gridHeight;
       if (gridHeight > contentHeight + 1) {
-        const nextSize = Math.max(gridColumns, pageSize.value - gridColumns);
+        const nextSize = Math.max(listGridColumns.value, pageSize.value - listGridColumns.value);
         if (nextSize !== pageSize.value) {
           debugLog('validate: overflow -> shrink', {
             contentHeight,
@@ -2035,7 +2050,7 @@ function recomputePageSize(explicitHeight?: number) {
     contentHeight,
     available,
     cell,
-    gridColumns,
+    gridColumns: listGridColumns.value,
     gridGap,
   });
 
@@ -2054,7 +2069,7 @@ function recomputePageSize(explicitHeight?: number) {
     used = rows * (cell + gridGap) - gridGap;
   }
 
-  const size = Math.max(gridColumns, rows * gridColumns);
+  const size = Math.max(listGridColumns.value, rows * listGridColumns.value);
 
   debugMetrics.value.contentHeight = Math.floor(contentHeight);
   debugMetrics.value.available = available;
@@ -2221,6 +2236,13 @@ watch(activePackId, async (next) => {
   await reloadPack(next);
   void recomputePageSize(); // 切 pack 后重新计算一次
 });
+watch(
+  () => settingsStore.itemListIconDisplayMode,
+  () => {
+    pageSize.value = 0;
+    void nextTick(() => recomputePageSize());
+  },
+);
 watch(
   () => settingsStore.language,
   (lang) => {

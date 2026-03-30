@@ -20,6 +20,7 @@ import {
 
 export type DarkMode = 'auto' | 'light' | 'dark';
 export type Language = 'zh-CN' | 'en-US' | 'ja-JP';
+export type ItemIconDisplayMode = 'modern' | 'jei_classic';
 
 type CircuitEditorPiecePanelState = {
   x: number;
@@ -69,6 +70,10 @@ function normalizeCustomPackId(rawId: string): string {
   const trimmed = rawId.trim();
   if (!trimmed) return '';
   return trimmed.startsWith('ext-') ? trimmed : `ext-${trimmed}`;
+}
+
+function normalizeItemIconDisplayMode(value: unknown): ItemIconDisplayMode | null {
+  return value === 'jei_classic' || value === 'modern' ? value : null;
 }
 
 function normalizeCustomPackSource(
@@ -141,6 +146,8 @@ export const useSettingsStore = defineStore('settings', {
       lineIntermediateColoring: true,
       lineWidthByRate: false,
       lineWidthCurveConfig: createDefaultLineWidthCurveConfig(),
+      itemListIconDisplayMode: 'modern' as ItemIconDisplayMode,
+      favoritesIconDisplayMode: 'modern' as ItemIconDisplayMode,
       machineCountDecimals: 2,
       pluginEnabledById: {} as Record<string, boolean>,
       pluginSettingsById: {} as Record<string, Record<string, string | number | boolean>>,
@@ -367,6 +374,12 @@ export const useSettingsStore = defineStore('settings', {
                 parsed.lineWidthCurveConfig as unknown as LineWidthCurveConfig,
               )
             : defaults.lineWidthCurveConfig,
+        itemListIconDisplayMode:
+          normalizeItemIconDisplayMode(parsed.itemListIconDisplayMode) ??
+          defaults.itemListIconDisplayMode,
+        favoritesIconDisplayMode:
+          normalizeItemIconDisplayMode(parsed.favoritesIconDisplayMode) ??
+          defaults.favoritesIconDisplayMode,
         machineCountDecimals:
           typeof parsed.machineCountDecimals === 'number' &&
           Number.isFinite(parsed.machineCountDecimals) &&
@@ -638,6 +651,14 @@ export const useSettingsStore = defineStore('settings', {
       this.lineWidthCurveConfig = sanitizeLineWidthCurveConfig(value);
       void this.save();
     },
+    setItemListIconDisplayMode(value: ItemIconDisplayMode) {
+      this.itemListIconDisplayMode = value === 'jei_classic' ? 'jei_classic' : 'modern';
+      void this.save();
+    },
+    setFavoritesIconDisplayMode(value: ItemIconDisplayMode) {
+      this.favoritesIconDisplayMode = value === 'jei_classic' ? 'jei_classic' : 'modern';
+      void this.save();
+    },
     setMachineCountDecimals(value: number) {
       const n = Number(value);
       if (!Number.isFinite(n) || n < 0) return;
@@ -708,6 +729,8 @@ export const useSettingsStore = defineStore('settings', {
         lineIntermediateColoring: this.lineIntermediateColoring,
         lineWidthByRate: this.lineWidthByRate,
         lineWidthCurveConfig: this.lineWidthCurveConfig,
+        itemListIconDisplayMode: this.itemListIconDisplayMode,
+        favoritesIconDisplayMode: this.favoritesIconDisplayMode,
         machineCountDecimals: this.machineCountDecimals,
         pluginEnabledById: this.pluginEnabledById,
         pluginSettingsById: this.pluginSettingsById,
@@ -834,6 +857,16 @@ export const useSettingsStore = defineStore('settings', {
         this.lineWidthCurveConfig = sanitizeLineWidthCurveConfig(
           parsed.lineWidthCurveConfig as unknown as LineWidthCurveConfig,
         );
+      }
+      const itemListIconDisplayMode = normalizeItemIconDisplayMode(parsed.itemListIconDisplayMode);
+      if (itemListIconDisplayMode) {
+        this.itemListIconDisplayMode = itemListIconDisplayMode;
+      }
+      const favoritesIconDisplayMode = normalizeItemIconDisplayMode(
+        parsed.favoritesIconDisplayMode,
+      );
+      if (favoritesIconDisplayMode) {
+        this.favoritesIconDisplayMode = favoritesIconDisplayMode;
       }
       if (
         typeof parsed.machineCountDecimals === 'number' &&
