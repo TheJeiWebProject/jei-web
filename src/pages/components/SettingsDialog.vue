@@ -196,6 +196,35 @@
                       :model-value="historyLimit"
                       @update:model-value="$emit('update:history-limit', Number($event) || 0)"
                     />
+                    <q-input
+                      type="number"
+                      :min="2"
+                      :label="t('favoritesPageSizeMin')"
+                      dense
+                      outlined
+                      :model-value="favoritePageSizeMin"
+                      @update:model-value="
+                        $emit('update:favorites-page-size-min', Number($event) || 2)
+                      "
+                    />
+                    <q-input
+                      type="number"
+                      :min="2"
+                      :label="t('favoritesPageSizeMax')"
+                      dense
+                      outlined
+                      :model-value="favoritePageSizeMax"
+                      @update:model-value="
+                        $emit('update:favorites-page-size-max', Number($event) || 2)
+                      "
+                    />
+                    <q-btn
+                      flat
+                      dense
+                      color="primary"
+                      :label="t('favoritesPageSizeResetDefaults')"
+                      @click="$emit('reset:favorites-page-size-bounds')"
+                    />
                     <q-toggle
                       :label="t('debugScroll')"
                       :model-value="debugLayout"
@@ -686,6 +715,8 @@ const sectionDefs: Array<{ key: SectionKey; label: string; keywords: string[] }>
 const props = defineProps<{
   open: boolean;
   historyLimit: number;
+  favoritePageSizeMin: number;
+  favoritePageSizeMax: number;
   debugLayout: boolean;
   debugNavPanel: boolean;
   showLoadingOverlay: boolean;
@@ -758,6 +789,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [value: boolean];
   'update:history-limit': [value: number];
+  'update:favorites-page-size-min': [value: number];
+  'update:favorites-page-size-max': [value: number];
+  'reset:favorites-page-size-bounds': [];
   'update:debug-layout': [value: boolean];
   'update:debug-nav-panel': [value: boolean];
   'update:show-loading-overlay': [value: boolean];

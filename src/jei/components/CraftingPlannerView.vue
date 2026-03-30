@@ -1258,7 +1258,6 @@ import { buildProductionLineModel } from 'src/jei/planner/productionLine';
 import { buildQuantFlowModel } from 'src/jei/planner/quantFlow';
 import {
   convertAmountPerMinuteToUnitValue,
-  createDefaultLineWidthCurveConfig,
   evaluateLineWidthCurve,
   type LineWidthCurveConfig,
 } from 'src/jei/planner/lineWidthCurve';
@@ -1351,10 +1350,16 @@ const targetUnit = ref<'items' | 'per_second' | 'per_minute' | 'per_hour'>('per_
 const treeDisplayMode = ref<'list' | 'compact'>('list');
 const collapsed = ref<Set<string>>(new Set());
 const lineCollapseIntermediate = ref(true);
-const lineWidthByRate = ref(false);
+const lineWidthByRate = computed({
+  get: () => settingsStore.lineWidthByRate,
+  set: (v: boolean) => settingsStore.setLineWidthByRate(v),
+});
 const quantWidthByRate = ref(true);
 const lineWidthCurveDialogOpen = ref(false);
-const lineWidthCurveConfig = ref<LineWidthCurveConfig>(createDefaultLineWidthCurveConfig());
+const lineWidthCurveConfig = computed({
+  get: () => settingsStore.lineWidthCurveConfig,
+  set: (v: LineWidthCurveConfig) => settingsStore.setLineWidthCurveConfig(v),
+});
 const forcedRawItemKeyHashes = ref<Set<string>>(new Set());
 const useProductRecovery = ref(false);
 const hasManualSelectionOverride = ref(false);

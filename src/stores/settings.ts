@@ -71,7 +71,9 @@ function normalizeCustomPackId(rawId: string): string {
   return trimmed.startsWith('ext-') ? trimmed : `ext-${trimmed}`;
 }
 
-function normalizeCustomPackSource(value: unknown): { packId: string; label: string; mirrors: string[] } | null {
+function normalizeCustomPackSource(
+  value: unknown,
+): { packId: string; label: string; mirrors: string[] } | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as { packId?: unknown; label?: unknown; mirrors?: unknown };
   if (typeof raw.packId !== 'string' || typeof raw.label !== 'string') return null;
@@ -88,6 +90,8 @@ export const useSettingsStore = defineStore('settings', {
   state: () => {
     const defaults = {
       historyLimit: 6,
+      favoritePageSizeMin: 2,
+      favoritePageSizeMax: 60,
       debugLayout: false,
       debugNavPanel: false,
       recipeViewMode: 'panel' as 'dialog' | 'panel',
@@ -115,7 +119,14 @@ export const useSettingsStore = defineStore('settings', {
       packImageProxyAnonymousToken: getStorageItem(PROXY_ANONYMOUS_TOKEN_KEY),
       packImageProxyFrameworkToken: getStorageItem(PROXY_FRAMEWORK_TOKEN_KEY),
       circuitCollectionPreviewShowPieces: false,
-      circuitEditorPiecePanel: { x: 16, y: 120, width: 420, height: 620, minimized: false, docked: false } as CircuitEditorPiecePanelState,
+      circuitEditorPiecePanel: {
+        x: 16,
+        y: 120,
+        width: 420,
+        height: 620,
+        minimized: false,
+        docked: false,
+      } as CircuitEditorPiecePanelState,
       circuitEditorPiecePanelSplitRatio: 0.5,
       detectPcDisableMobile: true,
       customPackSources: [] as Array<{ packId: string; label: string; mirrors: string[] }>,
@@ -150,48 +161,72 @@ export const useSettingsStore = defineStore('settings', {
         parsed.language === 'zh-CN' || parsed.language === 'en-US' || parsed.language === 'ja-JP'
           ? parsed.language
           : defaults.language;
-      const recipeViewMode: 'dialog' | 'panel' = parsed.recipeViewMode === 'panel' ? 'panel' : 'dialog';
+      const recipeViewMode: 'dialog' | 'panel' =
+        parsed.recipeViewMode === 'panel' ? 'panel' : 'dialog';
       const panelParsed = parsed.circuitEditorPiecePanel;
       const circuitEditorPiecePanel =
-        panelParsed
-          && typeof panelParsed.x === 'number'
-          && Number.isFinite(panelParsed.x)
-          && typeof panelParsed.y === 'number'
-          && Number.isFinite(panelParsed.y)
-          && typeof panelParsed.width === 'number'
-          && Number.isFinite(panelParsed.width)
-          && typeof panelParsed.height === 'number'
-          && Number.isFinite(panelParsed.height)
-          && typeof panelParsed.minimized === 'boolean'
+        panelParsed &&
+        typeof panelParsed.x === 'number' &&
+        Number.isFinite(panelParsed.x) &&
+        typeof panelParsed.y === 'number' &&
+        Number.isFinite(panelParsed.y) &&
+        typeof panelParsed.width === 'number' &&
+        Number.isFinite(panelParsed.width) &&
+        typeof panelParsed.height === 'number' &&
+        Number.isFinite(panelParsed.height) &&
+        typeof panelParsed.minimized === 'boolean'
           ? {
-            x: panelParsed.x,
-            y: panelParsed.y,
-            width: panelParsed.width,
-            height: panelParsed.height,
-            minimized: panelParsed.minimized,
-            docked: typeof panelParsed.docked === 'boolean' ? panelParsed.docked : defaults.circuitEditorPiecePanel.docked,
-          }
+              x: panelParsed.x,
+              y: panelParsed.y,
+              width: panelParsed.width,
+              height: panelParsed.height,
+              minimized: panelParsed.minimized,
+              docked:
+                typeof panelParsed.docked === 'boolean'
+                  ? panelParsed.docked
+                  : defaults.circuitEditorPiecePanel.docked,
+            }
           : defaults.circuitEditorPiecePanel;
       const restored = {
-        historyLimit: typeof parsed.historyLimit === 'number' ? parsed.historyLimit : defaults.historyLimit,
-        debugLayout: typeof parsed.debugLayout === 'boolean' ? parsed.debugLayout : defaults.debugLayout,
-        debugNavPanel: typeof parsed.debugNavPanel === 'boolean' ? parsed.debugNavPanel : defaults.debugNavPanel,
+        historyLimit:
+          typeof parsed.historyLimit === 'number' ? parsed.historyLimit : defaults.historyLimit,
+        favoritePageSizeMin:
+          typeof parsed.favoritePageSizeMin === 'number' &&
+          Number.isFinite(parsed.favoritePageSizeMin) &&
+          parsed.favoritePageSizeMin >= 2
+            ? Math.max(2, Math.min(200, Math.floor(parsed.favoritePageSizeMin)))
+            : defaults.favoritePageSizeMin,
+        favoritePageSizeMax:
+          typeof parsed.favoritePageSizeMax === 'number' &&
+          Number.isFinite(parsed.favoritePageSizeMax) &&
+          parsed.favoritePageSizeMax >= 2
+            ? Math.max(2, Math.min(400, Math.floor(parsed.favoritePageSizeMax)))
+            : defaults.favoritePageSizeMax,
+        debugLayout:
+          typeof parsed.debugLayout === 'boolean' ? parsed.debugLayout : defaults.debugLayout,
+        debugNavPanel:
+          typeof parsed.debugNavPanel === 'boolean' ? parsed.debugNavPanel : defaults.debugNavPanel,
         recipeViewMode,
         recipeSlotShowName:
           typeof parsed.recipeSlotShowName === 'boolean'
             ? parsed.recipeSlotShowName
             : defaults.recipeSlotShowName,
-        selectedPack: typeof parsed.selectedPack === 'string' ? parsed.selectedPack : defaults.selectedPack,
+        selectedPack:
+          typeof parsed.selectedPack === 'string' ? parsed.selectedPack : defaults.selectedPack,
         favoritesCollapsed:
           typeof parsed.favoritesCollapsed === 'boolean'
             ? parsed.favoritesCollapsed
             : defaults.favoritesCollapsed,
         panelCollapsed:
-          typeof parsed.panelCollapsed === 'boolean' ? parsed.panelCollapsed : defaults.panelCollapsed,
+          typeof parsed.panelCollapsed === 'boolean'
+            ? parsed.panelCollapsed
+            : defaults.panelCollapsed,
         darkMode,
         language,
         debugPanelPos:
-          parsed.debugPanelPos && typeof parsed.debugPanelPos.x === 'number' && typeof parsed.debugPanelPos.y === 'number'
+          parsed.debugPanelPos &&
+          typeof parsed.debugPanelPos.x === 'number' &&
+          typeof parsed.debugPanelPos.y === 'number'
             ? parsed.debugPanelPos
             : defaults.debugPanelPos,
         acceptedStartupDialogs: Array.isArray(parsed.acceptedStartupDialogs)
@@ -259,8 +294,8 @@ export const useSettingsStore = defineStore('settings', {
             : defaults.circuitCollectionPreviewShowPieces,
         circuitEditorPiecePanel,
         circuitEditorPiecePanelSplitRatio:
-          typeof parsed.circuitEditorPiecePanelSplitRatio === 'number'
-            && Number.isFinite(parsed.circuitEditorPiecePanelSplitRatio)
+          typeof parsed.circuitEditorPiecePanelSplitRatio === 'number' &&
+          Number.isFinite(parsed.circuitEditorPiecePanelSplitRatio)
             ? parsed.circuitEditorPiecePanelSplitRatio
             : defaults.circuitEditorPiecePanelSplitRatio,
         detectPcDisableMobile:
@@ -269,44 +304,45 @@ export const useSettingsStore = defineStore('settings', {
             : defaults.detectPcDisableMobile,
         customPackSources: Array.isArray(parsed.customPackSources)
           ? parsed.customPackSources
-            .map((x) => normalizeCustomPackSource(x))
-            .filter((x): x is { packId: string; label: string; mirrors: string[] } => x !== null)
+              .map((x) => normalizeCustomPackSource(x))
+              .filter((x): x is { packId: string; label: string; mirrors: string[] } => x !== null)
           : defaults.customPackSources,
         useDevPackMirrors:
           typeof parsed.useDevPackMirrors === 'boolean'
             ? parsed.useDevPackMirrors
             : defaults.useDevPackMirrors,
         packMirrorSelectionModeByPack:
-          parsed.packMirrorSelectionModeByPack && typeof parsed.packMirrorSelectionModeByPack === 'object'
+          parsed.packMirrorSelectionModeByPack &&
+          typeof parsed.packMirrorSelectionModeByPack === 'object'
             ? Object.fromEntries(
-              Object.entries(parsed.packMirrorSelectionModeByPack).filter(
-                (entry): entry is [string, 'auto' | 'manual'] =>
-                  (entry[1] === 'auto' || entry[1] === 'manual'),
-              ),
-            )
+                Object.entries(parsed.packMirrorSelectionModeByPack).filter(
+                  (entry): entry is [string, 'auto' | 'manual'] =>
+                    entry[1] === 'auto' || entry[1] === 'manual',
+                ),
+              )
             : defaults.packMirrorSelectionModeByPack,
         packManualMirrorByPack:
           parsed.packManualMirrorByPack && typeof parsed.packManualMirrorByPack === 'object'
             ? Object.fromEntries(
-              Object.entries(parsed.packManualMirrorByPack).filter(
-                (entry): entry is [string, string] => typeof entry[1] === 'string',
-              ),
-            )
+                Object.entries(parsed.packManualMirrorByPack).filter(
+                  (entry): entry is [string, string] => typeof entry[1] === 'string',
+                ),
+              )
             : defaults.packManualMirrorByPack,
         showLoadingOverlay:
           typeof parsed.showLoadingOverlay === 'boolean'
             ? parsed.showLoadingOverlay
             : defaults.showLoadingOverlay,
         quantLineWidthScale:
-          typeof parsed.quantLineWidthScale === 'number'
-            && Number.isFinite(parsed.quantLineWidthScale)
-            && parsed.quantLineWidthScale > 0
+          typeof parsed.quantLineWidthScale === 'number' &&
+          Number.isFinite(parsed.quantLineWidthScale) &&
+          parsed.quantLineWidthScale > 0
             ? parsed.quantLineWidthScale
             : defaults.quantLineWidthScale,
         productionLineG6Scale:
-          typeof parsed.productionLineG6Scale === 'number'
-            && Number.isFinite(parsed.productionLineG6Scale)
-            && parsed.productionLineG6Scale > 0
+          typeof parsed.productionLineG6Scale === 'number' &&
+          Number.isFinite(parsed.productionLineG6Scale) &&
+          parsed.productionLineG6Scale > 0
             ? parsed.productionLineG6Scale
             : defaults.productionLineG6Scale,
         productionLineRenderer:
@@ -327,40 +363,44 @@ export const useSettingsStore = defineStore('settings', {
             : defaults.lineWidthByRate,
         lineWidthCurveConfig:
           parsed.lineWidthCurveConfig && typeof parsed.lineWidthCurveConfig === 'object'
-            ? sanitizeLineWidthCurveConfig(parsed.lineWidthCurveConfig as unknown as LineWidthCurveConfig)
+            ? sanitizeLineWidthCurveConfig(
+                parsed.lineWidthCurveConfig as unknown as LineWidthCurveConfig,
+              )
             : defaults.lineWidthCurveConfig,
         machineCountDecimals:
-          typeof parsed.machineCountDecimals === 'number'
-            && Number.isFinite(parsed.machineCountDecimals)
-            && parsed.machineCountDecimals >= 0
+          typeof parsed.machineCountDecimals === 'number' &&
+          Number.isFinite(parsed.machineCountDecimals) &&
+          parsed.machineCountDecimals >= 0
             ? Math.max(0, Math.min(4, Math.floor(parsed.machineCountDecimals)))
             : defaults.machineCountDecimals,
         pluginEnabledById:
           parsed.pluginEnabledById && typeof parsed.pluginEnabledById === 'object'
             ? Object.fromEntries(
-              Object.entries(parsed.pluginEnabledById).filter(
-                (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
-              ),
-            )
+                Object.entries(parsed.pluginEnabledById).filter(
+                  (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
+                ),
+              )
             : defaults.pluginEnabledById,
         pluginSettingsById:
           parsed.pluginSettingsById && typeof parsed.pluginSettingsById === 'object'
             ? Object.fromEntries(
-              Object.entries(parsed.pluginSettingsById).filter(
-                (entry): entry is [string, Record<string, string | number | boolean>] =>
-                  typeof entry[1] === 'object' && !!entry[1],
-              ).map(([pluginId, values]) => [
-                pluginId,
-                Object.fromEntries(
-                  Object.entries(values).filter(
-                    (valueEntry): valueEntry is [string, string | number | boolean] =>
-                      typeof valueEntry[1] === 'string'
-                      || typeof valueEntry[1] === 'number'
-                      || typeof valueEntry[1] === 'boolean',
-                  ),
-                ),
-              ]),
-            )
+                Object.entries(parsed.pluginSettingsById)
+                  .filter(
+                    (entry): entry is [string, Record<string, string | number | boolean>] =>
+                      typeof entry[1] === 'object' && !!entry[1],
+                  )
+                  .map(([pluginId, values]) => [
+                    pluginId,
+                    Object.fromEntries(
+                      Object.entries(values).filter(
+                        (valueEntry): valueEntry is [string, string | number | boolean] =>
+                          typeof valueEntry[1] === 'string' ||
+                          typeof valueEntry[1] === 'number' ||
+                          typeof valueEntry[1] === 'boolean',
+                      ),
+                    ),
+                  ]),
+              )
             : defaults.pluginSettingsById,
       };
       syncProxyTokensToStorage(restored);
@@ -373,6 +413,29 @@ export const useSettingsStore = defineStore('settings', {
   actions: {
     setHistoryLimit(limit: number) {
       this.historyLimit = limit;
+      void this.save();
+    },
+    setFavoritePageSizeMin(value: number) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 2) return;
+      this.favoritePageSizeMin = Math.max(2, Math.min(200, Math.floor(n)));
+      if (this.favoritePageSizeMax < this.favoritePageSizeMin) {
+        this.favoritePageSizeMax = this.favoritePageSizeMin;
+      }
+      void this.save();
+    },
+    setFavoritePageSizeMax(value: number) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 2) return;
+      this.favoritePageSizeMax = Math.max(2, Math.min(400, Math.floor(n)));
+      if (this.favoritePageSizeMin > this.favoritePageSizeMax) {
+        this.favoritePageSizeMin = this.favoritePageSizeMax;
+      }
+      void this.save();
+    },
+    resetFavoritePageSizeBounds() {
+      this.favoritePageSizeMin = 2;
+      this.favoritePageSizeMax = 60;
       void this.save();
     },
     setDebugLayout(enabled: boolean) {
@@ -602,6 +665,8 @@ export const useSettingsStore = defineStore('settings', {
     async save() {
       const json = JSON.stringify({
         historyLimit: this.historyLimit,
+        favoritePageSizeMin: this.favoritePageSizeMin,
+        favoritePageSizeMax: this.favoritePageSizeMax,
         debugLayout: this.debugLayout,
         debugNavPanel: this.debugNavPanel,
         recipeViewMode: this.recipeViewMode,
@@ -664,46 +729,92 @@ export const useSettingsStore = defineStore('settings', {
 
       // Update state with loaded values
       if (typeof parsed.historyLimit === 'number') this.historyLimit = parsed.historyLimit;
+      if (
+        typeof parsed.favoritePageSizeMin === 'number' &&
+        Number.isFinite(parsed.favoritePageSizeMin) &&
+        parsed.favoritePageSizeMin >= 2
+      ) {
+        this.favoritePageSizeMin = Math.max(
+          2,
+          Math.min(200, Math.floor(parsed.favoritePageSizeMin)),
+        );
+      }
+      if (
+        typeof parsed.favoritePageSizeMax === 'number' &&
+        Number.isFinite(parsed.favoritePageSizeMax) &&
+        parsed.favoritePageSizeMax >= 2
+      ) {
+        this.favoritePageSizeMax = Math.max(
+          2,
+          Math.min(400, Math.floor(parsed.favoritePageSizeMax)),
+        );
+      }
+      if (this.favoritePageSizeMax < this.favoritePageSizeMin) {
+        this.favoritePageSizeMax = this.favoritePageSizeMin;
+      }
       if (typeof parsed.debugLayout === 'boolean') this.debugLayout = parsed.debugLayout;
       if (typeof parsed.debugNavPanel === 'boolean') this.debugNavPanel = parsed.debugNavPanel;
-      if (parsed.recipeViewMode === 'panel' || parsed.recipeViewMode === 'dialog') this.recipeViewMode = parsed.recipeViewMode;
-      if (typeof parsed.recipeSlotShowName === 'boolean') this.recipeSlotShowName = parsed.recipeSlotShowName;
+      if (parsed.recipeViewMode === 'panel' || parsed.recipeViewMode === 'dialog')
+        this.recipeViewMode = parsed.recipeViewMode;
+      if (typeof parsed.recipeSlotShowName === 'boolean')
+        this.recipeSlotShowName = parsed.recipeSlotShowName;
       if (typeof parsed.selectedPack === 'string') this.selectedPack = parsed.selectedPack;
-      if (typeof parsed.favoritesCollapsed === 'boolean') this.favoritesCollapsed = parsed.favoritesCollapsed;
+      if (typeof parsed.favoritesCollapsed === 'boolean')
+        this.favoritesCollapsed = parsed.favoritesCollapsed;
       if (typeof parsed.panelCollapsed === 'boolean') this.panelCollapsed = parsed.panelCollapsed;
       if (parsed.darkMode === 'auto' || parsed.darkMode === 'light' || parsed.darkMode === 'dark') {
         this.darkMode = parsed.darkMode;
         Dark.set(darkModeToQuasar(parsed.darkMode));
       }
-      if (parsed.language === 'zh-CN' || parsed.language === 'en-US' || parsed.language === 'ja-JP') this.language = parsed.language;
-      if (parsed.debugPanelPos && typeof parsed.debugPanelPos.x === 'number') this.debugPanelPos = parsed.debugPanelPos;
-      if (Array.isArray(parsed.acceptedStartupDialogs)) this.acceptedStartupDialogs = parsed.acceptedStartupDialogs.filter((x): x is string => typeof x === 'string');
-      if (typeof parsed.completedTutorial === 'boolean') this.completedTutorial = parsed.completedTutorial;
-      if (typeof parsed.favoritesOpensNewStack === 'boolean') this.favoritesOpensNewStack = parsed.favoritesOpensNewStack;
-      if (typeof parsed.persistHistoryRecords === 'boolean') this.persistHistoryRecords = parsed.persistHistoryRecords;
-      if (typeof parsed.wikiImageUseProxy === 'boolean') this.wikiImageUseProxy = parsed.wikiImageUseProxy;
-      if (typeof parsed.wikiImageProxyUrl === 'string') this.wikiImageProxyUrl = parsed.wikiImageProxyUrl;
-      if (typeof parsed.wikiCatalogFileName === 'string') this.wikiCatalogFileName = parsed.wikiCatalogFileName;
-      if (typeof parsed.packImageProxyUsePackProvided === 'boolean') this.packImageProxyUsePackProvided = parsed.packImageProxyUsePackProvided;
-      if (typeof parsed.packImageProxyUseManual === 'boolean') this.packImageProxyUseManual = parsed.packImageProxyUseManual;
-      if (typeof parsed.packImageProxyUseDev === 'boolean') this.packImageProxyUseDev = parsed.packImageProxyUseDev;
-      if (typeof parsed.packImageProxyManualUrl === 'string') this.packImageProxyManualUrl = parsed.packImageProxyManualUrl;
-      if (typeof parsed.packImageProxyDevUrl === 'string') this.packImageProxyDevUrl = parsed.packImageProxyDevUrl;
-      if (typeof parsed.packImageProxyAccessToken === 'string') this.packImageProxyAccessToken = parsed.packImageProxyAccessToken;
-      if (typeof parsed.packImageProxyAnonymousToken === 'string') this.packImageProxyAnonymousToken = parsed.packImageProxyAnonymousToken;
-      if (typeof parsed.packImageProxyFrameworkToken === 'string') this.packImageProxyFrameworkToken = parsed.packImageProxyFrameworkToken;
-      if (typeof parsed.showLoadingOverlay === 'boolean') this.showLoadingOverlay = parsed.showLoadingOverlay;
+      if (parsed.language === 'zh-CN' || parsed.language === 'en-US' || parsed.language === 'ja-JP')
+        this.language = parsed.language;
+      if (parsed.debugPanelPos && typeof parsed.debugPanelPos.x === 'number')
+        this.debugPanelPos = parsed.debugPanelPos;
+      if (Array.isArray(parsed.acceptedStartupDialogs))
+        this.acceptedStartupDialogs = parsed.acceptedStartupDialogs.filter(
+          (x): x is string => typeof x === 'string',
+        );
+      if (typeof parsed.completedTutorial === 'boolean')
+        this.completedTutorial = parsed.completedTutorial;
+      if (typeof parsed.favoritesOpensNewStack === 'boolean')
+        this.favoritesOpensNewStack = parsed.favoritesOpensNewStack;
+      if (typeof parsed.persistHistoryRecords === 'boolean')
+        this.persistHistoryRecords = parsed.persistHistoryRecords;
+      if (typeof parsed.wikiImageUseProxy === 'boolean')
+        this.wikiImageUseProxy = parsed.wikiImageUseProxy;
+      if (typeof parsed.wikiImageProxyUrl === 'string')
+        this.wikiImageProxyUrl = parsed.wikiImageProxyUrl;
+      if (typeof parsed.wikiCatalogFileName === 'string')
+        this.wikiCatalogFileName = parsed.wikiCatalogFileName;
+      if (typeof parsed.packImageProxyUsePackProvided === 'boolean')
+        this.packImageProxyUsePackProvided = parsed.packImageProxyUsePackProvided;
+      if (typeof parsed.packImageProxyUseManual === 'boolean')
+        this.packImageProxyUseManual = parsed.packImageProxyUseManual;
+      if (typeof parsed.packImageProxyUseDev === 'boolean')
+        this.packImageProxyUseDev = parsed.packImageProxyUseDev;
+      if (typeof parsed.packImageProxyManualUrl === 'string')
+        this.packImageProxyManualUrl = parsed.packImageProxyManualUrl;
+      if (typeof parsed.packImageProxyDevUrl === 'string')
+        this.packImageProxyDevUrl = parsed.packImageProxyDevUrl;
+      if (typeof parsed.packImageProxyAccessToken === 'string')
+        this.packImageProxyAccessToken = parsed.packImageProxyAccessToken;
+      if (typeof parsed.packImageProxyAnonymousToken === 'string')
+        this.packImageProxyAnonymousToken = parsed.packImageProxyAnonymousToken;
+      if (typeof parsed.packImageProxyFrameworkToken === 'string')
+        this.packImageProxyFrameworkToken = parsed.packImageProxyFrameworkToken;
+      if (typeof parsed.showLoadingOverlay === 'boolean')
+        this.showLoadingOverlay = parsed.showLoadingOverlay;
       if (
-        typeof parsed.quantLineWidthScale === 'number'
-        && Number.isFinite(parsed.quantLineWidthScale)
-        && parsed.quantLineWidthScale > 0
+        typeof parsed.quantLineWidthScale === 'number' &&
+        Number.isFinite(parsed.quantLineWidthScale) &&
+        parsed.quantLineWidthScale > 0
       ) {
         this.quantLineWidthScale = parsed.quantLineWidthScale;
       }
       if (
-        typeof parsed.productionLineG6Scale === 'number'
-        && Number.isFinite(parsed.productionLineG6Scale)
-        && parsed.productionLineG6Scale > 0
+        typeof parsed.productionLineG6Scale === 'number' &&
+        Number.isFinite(parsed.productionLineG6Scale) &&
+        parsed.productionLineG6Scale > 0
       ) {
         this.productionLineG6Scale = parsed.productionLineG6Scale;
       }
@@ -720,18 +831,26 @@ export const useSettingsStore = defineStore('settings', {
         this.lineWidthByRate = parsed.lineWidthByRate;
       }
       if (parsed.lineWidthCurveConfig && typeof parsed.lineWidthCurveConfig === 'object') {
-        this.lineWidthCurveConfig = sanitizeLineWidthCurveConfig(parsed.lineWidthCurveConfig as unknown as LineWidthCurveConfig);
+        this.lineWidthCurveConfig = sanitizeLineWidthCurveConfig(
+          parsed.lineWidthCurveConfig as unknown as LineWidthCurveConfig,
+        );
       }
       if (
-        typeof parsed.machineCountDecimals === 'number'
-        && Number.isFinite(parsed.machineCountDecimals)
-        && parsed.machineCountDecimals >= 0
+        typeof parsed.machineCountDecimals === 'number' &&
+        Number.isFinite(parsed.machineCountDecimals) &&
+        parsed.machineCountDecimals >= 0
       ) {
-        this.machineCountDecimals = Math.max(0, Math.min(4, Math.floor(parsed.machineCountDecimals)));
+        this.machineCountDecimals = Math.max(
+          0,
+          Math.min(4, Math.floor(parsed.machineCountDecimals)),
+        );
       }
-      if (typeof parsed.circuitCollectionPreviewShowPieces === 'boolean') this.circuitCollectionPreviewShowPieces = parsed.circuitCollectionPreviewShowPieces;
-      if (typeof parsed.circuitEditorPiecePanelSplitRatio === 'number') this.circuitEditorPiecePanelSplitRatio = parsed.circuitEditorPiecePanelSplitRatio;
-      if (typeof parsed.detectPcDisableMobile === 'boolean') this.detectPcDisableMobile = parsed.detectPcDisableMobile;
+      if (typeof parsed.circuitCollectionPreviewShowPieces === 'boolean')
+        this.circuitCollectionPreviewShowPieces = parsed.circuitCollectionPreviewShowPieces;
+      if (typeof parsed.circuitEditorPiecePanelSplitRatio === 'number')
+        this.circuitEditorPiecePanelSplitRatio = parsed.circuitEditorPiecePanelSplitRatio;
+      if (typeof parsed.detectPcDisableMobile === 'boolean')
+        this.detectPcDisableMobile = parsed.detectPcDisableMobile;
       if (Array.isArray(parsed.customPackSources)) {
         this.customPackSources = parsed.customPackSources
           .map((x) => normalizeCustomPackSource(x))
@@ -740,11 +859,14 @@ export const useSettingsStore = defineStore('settings', {
       if (typeof parsed.useDevPackMirrors === 'boolean') {
         this.useDevPackMirrors = parsed.useDevPackMirrors;
       }
-      if (parsed.packMirrorSelectionModeByPack && typeof parsed.packMirrorSelectionModeByPack === 'object') {
+      if (
+        parsed.packMirrorSelectionModeByPack &&
+        typeof parsed.packMirrorSelectionModeByPack === 'object'
+      ) {
         this.packMirrorSelectionModeByPack = Object.fromEntries(
           Object.entries(parsed.packMirrorSelectionModeByPack).filter(
             (entry): entry is [string, 'auto' | 'manual'] =>
-              (entry[1] === 'auto' || entry[1] === 'manual'),
+              entry[1] === 'auto' || entry[1] === 'manual',
           ),
         );
       }
@@ -764,20 +886,22 @@ export const useSettingsStore = defineStore('settings', {
       }
       if (parsed.pluginSettingsById && typeof parsed.pluginSettingsById === 'object') {
         this.pluginSettingsById = Object.fromEntries(
-          Object.entries(parsed.pluginSettingsById).filter(
-            (entry): entry is [string, Record<string, string | number | boolean>] =>
-              typeof entry[1] === 'object' && !!entry[1],
-          ).map(([pluginId, values]) => [
-            pluginId,
-            Object.fromEntries(
-              Object.entries(values).filter(
-                (valueEntry): valueEntry is [string, string | number | boolean] =>
-                  typeof valueEntry[1] === 'string'
-                  || typeof valueEntry[1] === 'number'
-                  || typeof valueEntry[1] === 'boolean',
+          Object.entries(parsed.pluginSettingsById)
+            .filter(
+              (entry): entry is [string, Record<string, string | number | boolean>] =>
+                typeof entry[1] === 'object' && !!entry[1],
+            )
+            .map(([pluginId, values]) => [
+              pluginId,
+              Object.fromEntries(
+                Object.entries(values).filter(
+                  (valueEntry): valueEntry is [string, string | number | boolean] =>
+                    typeof valueEntry[1] === 'string' ||
+                    typeof valueEntry[1] === 'number' ||
+                    typeof valueEntry[1] === 'boolean',
+                ),
               ),
-            ),
-          ]),
+            ]),
         );
       }
     },
