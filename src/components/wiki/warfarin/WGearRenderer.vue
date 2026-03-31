@@ -31,7 +31,7 @@
       <div class="ww__stack">
         <div v-for="(mod, i) in equipAttrModifiers" :key="i" class="ww__panel">
           <div class="ww__panel-title">
-            {{ getAttrName(String(mod.attrType)) }} (#{{ mod.attrType }})
+            {{ attrLabel(String(mod.attrType)) }} (#{{ mod.attrType }})
           </div>
           <div class="ww__panel-sub">
             Modifier Type: {{ mod.modifierType }} · Index: {{ mod.attrIndex }}
@@ -108,6 +108,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import WInfoGrid from './shared/WInfoGrid.vue';
 import WDataTable from './shared/WDataTable.vue';
 import WJsonViewer from './shared/WJsonViewer.vue';
@@ -129,6 +130,9 @@ const props = defineProps<{
   detail: RecordLike;
   list: RecordLike;
 }>();
+
+const { locale } = useI18n();
+const attrLabel = (attrType: string | number) => getAttrName(attrType, locale.value);
 
 const itemTableData = computed<RecordLike>(() =>
   isRecordLike(props.detail.itemTable) ? props.detail.itemTable : {},
@@ -204,7 +208,7 @@ const baseAttrModifiers = computed(() => {
   return [
     {
       attrType: formatScalar(mod.attrType),
-      attrName: getAttrName(String(mod.attrType)),
+      attrName: attrLabel(String(mod.attrType)),
       attrValue: formatScalar(mod.attrValue),
       modifierType: resolveEnumName(modifierTypeNames, mod.modifierType),
     },
@@ -215,7 +219,7 @@ const displayAttrModifiers = computed(() =>
   toArray<RecordLike>(equipTable.value.displayAttrModifiers).map((mod) => ({
     attrIndex: formatScalar(mod.attrIndex),
     attrType: formatScalar(mod.attrType),
-    attrName: getAttrName(String(mod.attrType)),
+    attrName: attrLabel(String(mod.attrType)),
     attrValue: formatScalar(mod.attrValue),
     modifierType: resolveEnumName(modifierTypeNames, mod.modifierType),
   })),

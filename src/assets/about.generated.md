@@ -1,16 +1,32 @@
 # About
 
 ## Build
-- Version: 17e3816-dirty
-- Commit: 17e3816 (17e38161921f9ab7f9936a2001691f2c3ee5f9dc)
-- Commit count: 140
-- Subject: feat: 添加 Warfarin wiki 渲染器系统，新增 commonmark 和 warfarin-raw-operator 两种 wiki 格式支持 - 添加完整的 Warfarin wiki 渲染器系统，包括操作员、敌人、设施、装备等多种内容类型的渲染组件 - 新增 commonmark wiki 格式支持，基于 CommonMark 标准的 Markdown 渲染 - 新增 warfarin-raw-operator wiki 格式支持，用于渲染 Warfarin 原始操作员数据 - 添加从 C# 枚举文件自动生成 TypeScript 枚举的脚本 (generate-genums.mjs) - 扩展 i18n 系统，新增 localeData 数据结构支持本地化 wiki 内容 - 增强 pack 加载器，支持获取共享 JSON 数据和处理本地化数据 - 扩展类型系统，添加 JeiWebLocaleDataEntry 接口和 category 字段支持 - 更新验证逻辑以支持新的 category 字段 - 更新 RecipeContentView 以集成新的 wiki 渲染器
+- Version: 4948f4b-dirty
+- Commit: 4948f4b (4948f4bd15d4a630a690fffe6365787dbef6ab22)
+- Commit count: 142
+- Subject: feat: 添加外观设置，支持主题模式和图标显示模式的选择
 - Author: AndreaFrederica
-- Date: 2026-03-30T06:51:32+08:00
-- Generated at: 2026-03-30T12:21:58.019Z
+- Date: 2026-03-30T21:38:51+08:00
+- Generated at: 2026-03-30T16:27:48.378Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r142 (2026-03-30T21:38:51+08:00)
+- 4948f4b
+  feat: 添加外观设置，支持主题模式和图标显示模式的选择
+
+### r141 (2026-03-30T21:05:57+08:00)
+- e641242
+  feat: add favorites page size settings and localization
+  
+  - Introduced new settings for minimum and maximum items per page for favorites.
+  - Added reset defaults option for favorites page size settings.
+  - Updated English, Japanese, and Chinese localization files to include new strings.
+  - Enhanced FavoritesPanel component to display total items and items per page.
+  - Implemented pagination for favorite items in FavoritesPanel.
+  - Updated SettingsDialog to allow users to adjust favorites page size settings.
+  - Added corresponding methods in settings store to manage favorites page size.
 
 ### r140 (2026-03-30T06:51:32+08:00)
 - 17e3816

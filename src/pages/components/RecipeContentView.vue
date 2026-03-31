@@ -141,6 +141,7 @@
                 <WarfarinEndpointRenderer
                   :source="renderer.rawSource"
                   :endpoint="renderer.warfarinEndpoint"
+                  :source-pack-id="renderer.sourcePackId"
                   :item-defs-by-key-hash="itemDefsByKeyHash"
                 />
               </div>
@@ -1004,11 +1005,10 @@ const legacyStructuredRenderers = computed<LegacyStructuredRenderer[]>(() => {
 
 const extensionWikiRenderers = computed<PreparedWikiRenderer[]>(() => {
   const config = getJeiwebWikiConfig(props.currentItemDef?.extensions);
-  if (!config?.renderers.length) return [];
   const sourcePackId =
     getAggregateSourcePackId(props.currentItemDef?.detailPath) ?? props.pack?.manifest.packId;
 
-  const prepared = config.renderers
+  const prepared = (config?.renderers ?? [])
     .map((entry, index): { index: number; renderer: PreparedWikiRenderer } | null => {
       if (entry.enabled === false) return null;
       const type = normalizeRendererType(entry.type);
@@ -1020,7 +1020,7 @@ const extensionWikiRenderers = computed<PreparedWikiRenderer[]>(() => {
       const source =
         entry.data !== undefined
           ? entry.data
-          : (resolveRendererSourceFromRef(type, sourceRef, config.sources) ??
+          : (resolveRendererSourceFromRef(type, sourceRef, config?.sources ?? {}) ??
             resolveLegacyRendererSource(type));
       const sourceLabel = describeRendererSource(type, sourceRef, entry.data !== undefined);
 
@@ -1125,10 +1125,32 @@ const extensionWikiRenderers = computed<PreparedWikiRenderer[]>(() => {
       };
     })
     .filter((entry): entry is { index: number; renderer: PreparedWikiRenderer } => entry !== null)
-    .sort((a, b) => a.renderer.order - b.renderer.order || a.index - b.index)
     .map((entry) => entry.renderer);
 
-  return prepared;
+  if (!prepared.some((entry) => entry.type === 'warfarin-raw-operator')) {
+    const rawSource = getCurrentItemLocaleEntry()?.raw;
+    if (hasWarfarinOperatorRawContent(rawSource)) {
+      const wikiMeta = props.currentItemDef?.extensions?.jeiweb?.wiki?.meta;
+      const warfarinEndpoint =
+        isRecordLike(wikiMeta) && typeof wikiMeta.endpoint === 'string'
+          ? wikiMeta.endpoint
+          : undefined;
+      prepared.push({
+        id: 'renderer-warfarin-raw-auto',
+        type: 'warfarin-raw-operator',
+        order: 15,
+        title: 'Warfarin',
+        defaultTitle: getRendererDefaultTitle('warfarin-raw-operator'),
+        sourceTitle: buildRendererSourceTitle(sourcePackId),
+        sourceLabel: 'i18n.raw(auto)',
+        ...(sourcePackId ? { sourcePackId } : {}),
+        rawSource,
+        ...(warfarinEndpoint ? { warfarinEndpoint } : {}),
+      });
+    }
+  }
+
+  return prepared.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 });
 
 const hasExtensionWikiRenderers = computed(() => extensionWikiRenderers.value.length > 0);
@@ -1305,10 +1327,21 @@ function handleWikiEntryNavigate(itemId: string) {
   }
 
   const firstKeyHash = props.index?.itemKeyHashesByItemId.get(id)?.[0];
-  if (!firstKeyHash) return;
-  const def = props.index?.itemsByKeyHash.get(firstKeyHash);
-  if (!def) return;
-  emit('wiki-item-click', def.key);
+  if (firstKeyHash) {
+    const def = props.index?.itemsByKeyHash.get(firstKeyHash);
+    if (def) {
+      emit('wiki-item-click', def.key);
+      return;
+    }
+  }
+
+  const suffixDef = Object.values(props.itemDefsByKeyHash).find((entry) => {
+    const fullId = typeof entry?.key?.id === 'string' ? entry.key.id : '';
+    return fullId === id || fullId.endsWith(id);
+  });
+  if (suffixDef) {
+    emit('wiki-item-click', suffixDef.key);
+  }
 }
 
 function openViewer(src: string, name?: string) {

@@ -1,68 +1,96 @@
 <template>
   <div>
-    <section class="ww__section">
-      <h3 class="ww__title">Basic Info</h3>
+    <section id="operator-overview" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.overview') }}</h3>
       <WInfoGrid :entries="basicEntries" />
-    </section>
 
-    <section v-if="cvEntries.length" class="ww__section">
-      <h3 class="ww__title">CV / 声优</h3>
-      <WInfoGrid :entries="cvEntries" />
-    </section>
+      <div v-if="cvEntries.length" class="ww__tag-box q-mt-md">
+        <div v-for="entry in cvEntries" :key="entry.label" class="ww__tag-row">
+          <span class="ww__tag-label">{{ entry.label }}</span>
+          <span>{{ entry.value }}</span>
+        </div>
+      </div>
 
-    <section v-if="tagEntries.length" class="ww__section">
-      <h3 class="ww__title">Tags</h3>
-      <div class="ww__tag-box">
+      <div v-if="tagEntries.length" class="ww__tag-box q-mt-md">
         <div v-for="entry in tagEntries" :key="entry.label" class="ww__tag-row">
           <span class="ww__tag-label">{{ entry.label }}</span>
           <span>{{ entry.value }}</span>
         </div>
       </div>
+
+      <div v-if="itemTable" class="q-mt-md">
+        <WInfoGrid :entries="itemEntries" />
+        <WTextRenderer
+          v-if="pickWarfarinText(itemTable)"
+          :value="pickWarfarinText(itemTable)"
+          class-name="ww__prose--box"
+          :local-name-map="localNameMap"
+          :id-to-pack-item-id="idToPackItemId"
+          :item-defs-by-key-hash="itemDefsByKeyHash"
+          :refs="refs"
+        />
+        <WTextRenderer
+          v-if="itemTable.decoDesc"
+          :value="itemTable.decoDesc"
+          class-name="ww__muted"
+          compact
+          :local-name-map="localNameMap"
+          :id-to-pack-item-id="idToPackItemId"
+          :item-defs-by-key-hash="itemDefsByKeyHash"
+          :refs="refs"
+        />
+      </div>
     </section>
 
-    <section v-if="itemTable" class="ww__section">
-      <h3 class="ww__title">Item / 物品</h3>
-      <WInfoGrid :entries="itemEntries" />
-      <div
-        v-if="itemTable.desc"
-        class="ww__prose ww__prose--box"
-        v-html="formatWikiHtml(itemTable.desc)"
-      ></div>
-      <div
-        v-if="itemTable.decoDesc"
-        class="ww__muted"
-        v-html="formatWikiHtml(itemTable.decoDesc)"
-      ></div>
-    </section>
+    <section v-if="attributeSummaryColumns.length" id="operator-attributes" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.attributes') }}</h3>
 
-    <section v-if="attributeStages.length" class="ww__section">
-      <h3 class="ww__title">Attributes / 属性</h3>
+      <div class="ww__table-wrap">
+        <table class="ww__table ww__table--wide">
+          <thead>
+            <tr>
+              <th>{{ t('warfarin.common.stat') }}</th>
+              <th v-for="column in attributeSummaryColumns" :key="column">{{ levelLabel(column) }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in attributeSummaryRows" :key="row.attrType">
+              <td>{{ row.label }}</td>
+              <td v-for="column in attributeSummaryColumns" :key="`${row.attrType}-${column}`">
+                {{ formatScalar(row.values[column]) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <q-expansion-item
         v-for="stage in attributeStages"
         :key="`attr-${stage.breakStage}`"
         dense
         expand-separator
         switch-toggle-side
-        :label="`Break Stage ${stage.breakStage} (${stage.entries.length} Levels)`"
+        :label="stage.label"
         class="ww__expansion"
       >
         <div class="ww__table-wrap">
           <table class="ww__table ww__table--wide">
             <thead>
               <tr>
-                <th>Level</th>
-                <th v-for="type in stage.attrTypes" :key="type">
-                  {{ getAttrName(type) }}
-                  <span class="ww__attr-type">#{{ type }}</span>
-                </th>
+                <th>{{ t('warfarin.common.level') }}</th>
+                <th v-for="type in stage.attrTypes" :key="type">{{ attrLabel(type) }}</th>
+                <th>{{ t('warfarin.common.expCost') }}</th>
+                <th>{{ t('warfarin.common.creditCost') }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in stage.rows" :key="formatScalar(row.level)">
-                <td>Lv {{ formatScalar(row.level) }}</td>
+              <tr v-for="row in stage.rows" :key="`${stage.breakStage}-${row.level}`">
+                <td>{{ formatScalar(row.level) }}</td>
                 <td v-for="type in stage.attrTypes" :key="`${row.level}-${type}`">
                   {{ formatScalar(row.values[type]) }}
                 </td>
+                <td>{{ formatScalar(row.expCost) }}</td>
+                <td>{{ formatScalar(row.goldCost) }}</td>
               </tr>
             </tbody>
           </table>
@@ -70,51 +98,61 @@
       </q-expansion-item>
     </section>
 
-    <section v-if="potentialBundles.length" class="ww__section">
-      <h3 class="ww__title">Potential / 潜能</h3>
+    <section v-if="promotionNodes.length" id="operator-promotions" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.promotions') }}</h3>
+      <div class="ww__stack">
+        <div v-for="node in promotionNodes" :key="String(node.nodeId)" class="ww__panel">
+          <div class="ww__panel-title">{{ node.name || node.nodeId }}</div>
+          <WTextRenderer
+            v-if="node.description"
+            :value="node.description"
+            compact
+            :local-name-map="localNameMap"
+            :id-to-pack-item-id="idToPackItemId"
+            :item-defs-by-key-hash="itemDefsByKeyHash"
+            :refs="refs"
+          />
+          <WItemCostGrid
+            class="q-mt-md"
+            :entries="
+              normalizeMaterialCosts(
+                node.requiredItem,
+                localNameMap,
+                itemDefsByKeyHash,
+                idToPackItemId,
+              )
+            "
+          />
+        </div>
+      </div>
+    </section>
+
+    <section v-if="potentialBundles.length" id="operator-potentials" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.potentials') }}</h3>
       <div class="ww__stack">
         <div v-for="bundle in potentialBundles" :key="formatScalar(bundle.level)" class="ww__panel">
           <div class="ww__panel-title">
-            Potential {{ bundle.level }}<span v-if="bundle.name"> · {{ bundle.name }}</span>
+            {{ t('warfarin.common.potentialLevel', { level: formatScalar(bundle.level) }) }}
+            <span v-if="bundle.name"> · {{ bundle.name }}</span>
           </div>
-          <div class="ww__panel-sub">
-            {{ formatItemBundle(bundle.itemIds, bundle.itemCnts, itemDefsByKeyHash) || '-' }}
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="growthNodes.length" class="ww__section">
-      <h3 class="ww__title">Growth / 成长</h3>
-      <div class="ww__stack">
-        <div v-for="node in growthNodes" :key="formatScalar(node.nodeId)" class="ww__panel">
-          <div class="ww__panel-title">{{ node.name || node.nodeId }}</div>
-          <div class="ww__panel-sub">
-            {{
-              resolveEnumName(
-                { 1: 'Promotion / 精英化', 2: 'Outfitting / 装备' },
-                node.nodeType,
-                'Node',
+          <WItemCostGrid
+            class="q-mt-md"
+            :entries="
+              normalizeMaterialBundle(
+                bundle.itemIds,
+                bundle.itemCnts,
+                itemDefsByKeyHash,
+                idToPackItemId,
               )
-            }}
-          </div>
-          <div
-            v-if="node.description"
-            class="ww__prose ww__prose--small"
-            v-html="formatWikiHtml(node.description)"
-          ></div>
-          <div class="ww__muted">
-            {{
-              formatRequiredItems(node.requiredItem, localNameMap, itemDefsByKeyHash) ||
-              'No required items'
-            }}
-          </div>
+            "
+            compact
+          />
         </div>
       </div>
     </section>
 
-    <section v-if="snapshotEntries.length" class="ww__section">
-      <h3 class="ww__title">Artwork / 立绘</h3>
+    <section v-if="snapshotEntries.length" id="operator-artworks" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.artworks') }}</h3>
       <div class="ww__grid">
         <div
           v-for="snapshot in snapshotEntries"
@@ -131,13 +169,27 @@
           <div class="ww__label ww__value--mono">
             {{ snapshot.pictureId || snapshot.imgId || '-' }}
           </div>
-          <div v-if="snapshot.decoDescription" class="ww__muted">
-            {{ stripWikiText(snapshot.decoDescription) }}
-          </div>
-          <div v-if="snapshot.description" class="ww__muted">
-            {{ stripWikiText(snapshot.description) }}
-          </div>
-          <div class="ww__label">By {{ snapshot.author || 'Unknown' }}</div>
+          <WTextRenderer
+            v-if="snapshot.decoDescription"
+            :value="snapshot.decoDescription"
+            class-name="ww__muted"
+            compact
+            :local-name-map="localNameMap"
+            :id-to-pack-item-id="idToPackItemId"
+            :item-defs-by-key-hash="itemDefsByKeyHash"
+            :refs="refs"
+          />
+          <WTextRenderer
+            v-if="pickWarfarinText(snapshot)"
+            :value="pickWarfarinText(snapshot)"
+            class-name="ww__muted"
+            compact
+            :local-name-map="localNameMap"
+            :id-to-pack-item-id="idToPackItemId"
+            :item-defs-by-key-hash="itemDefsByKeyHash"
+            :refs="refs"
+          />
+          <div class="ww__label">{{ t('warfarin.common.author') }}: {{ snapshot.author || '-' }}</div>
         </div>
       </div>
     </section>
@@ -146,36 +198,45 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ItemDef } from 'src/jei/types';
 import WInfoGrid from './shared/WInfoGrid.vue';
+import WTextRenderer from './shared/WTextRenderer.vue';
+import WItemCostGrid from './shared/WItemCostGrid.vue';
 import {
   type RecordLike,
   isRecordLike,
   toArray,
-  formatWikiHtml,
   formatScalar,
   formatRarity,
-  formatRequiredItems,
-  formatItemBundle,
+  normalizeMaterialBundle,
+  normalizeMaterialCosts,
   toCdnAssetUrl,
-  stripWikiText,
   getAttrName,
-  resolveEnumName,
+  resolveLocalizedEntityName,
   toText,
 } from './utils';
-import { weaponTypeNames, professionCategoryNames, charTypeNames } from './genums';
+import { getWarfarinDamageTypeLabel, getWarfarinProfessionLabel, getWarfarinWeaponTypeLabel } from './operatorLabels';
+import { pickWarfarinText } from './text';
 
 interface AttributeStageRow {
   level: unknown;
   values: Record<string, unknown>;
+  expCost: unknown;
+  goldCost: unknown;
 }
 
 const props = defineProps<{
   detail: RecordLike;
   list: RecordLike;
+  refs: RecordLike;
   localNameMap: RecordLike;
+  idToPackItemId?: RecordLike | undefined;
   itemDefsByKeyHash?: Record<string, ItemDef> | undefined;
 }>();
+
+const { t, locale } = useI18n();
+const attrLabel = (attrType: string | number) => getAttrName(attrType, locale.value);
 
 const characterTable = computed<RecordLike | null>(() =>
   isRecordLike(props.detail.characterTable) ? props.detail.characterTable : null,
@@ -192,36 +253,65 @@ const itemTable = computed<RecordLike | null>(() =>
 const potentialTable = computed<RecordLike>(() =>
   isRecordLike(props.detail.characterPotentialTable) ? props.detail.characterPotentialTable : {},
 );
+const levelRefTable = computed<RecordLike>(() =>
+  isRecordLike(props.refs.charLevelUpTable) ? props.refs.charLevelUpTable : {},
+);
 
 const basicEntries = computed(() => [
-  { label: 'Name', value: characterTable.value?.name || props.list?.name || '-' },
-  { label: 'English Name', value: characterTable.value?.engName || '-' },
-  { label: 'ID', value: characterTable.value?.charId || props.list?.id || '-', mono: true },
-  { label: 'Rarity', value: formatRarity(characterTable.value?.rarity ?? props.list?.rarity) },
+  { label: t('warfarin.common.name'), value: characterTable.value?.name || props.list?.name || '-' },
+  { label: t('warfarin.common.englishName'), value: characterTable.value?.engName || '-' },
   {
-    label: 'Type',
-    value: resolveEnumName(
-      charTypeNames,
+    label: t('warfarin.common.id'),
+    value: characterTable.value?.charId || props.list?.id || '-',
+    mono: true,
+  },
+  {
+    label: t('warfarin.common.rarity'),
+    value: formatRarity(characterTable.value?.rarity ?? props.list?.rarity),
+  },
+  {
+    label: t('warfarin.common.type'),
+    value: getWarfarinDamageTypeLabel(
       characterTable.value?.charTypeId ?? props.list?.charTypeId,
+      locale.value,
     ),
   },
   {
-    label: 'Profession',
-    value: resolveEnumName(
-      professionCategoryNames,
+    label: t('warfarin.common.profession'),
+    value: getWarfarinProfessionLabel(
       props.list?.professionId ?? characterTable.value?.professionId,
-      (props.list?.profession as string | undefined) || '-',
+      props.list?.profession,
+      locale.value,
     ),
   },
   {
-    label: 'Weapon Type',
-    value: resolveEnumName(
-      weaponTypeNames,
+    label: t('warfarin.common.weaponType'),
+    value: getWarfarinWeaponTypeLabel(
       characterTable.value?.weaponType ?? props.list?.weaponType,
+      locale.value,
     ),
   },
-  { label: 'Department', value: characterTable.value?.department || '-' },
-  { label: 'Default Weapon', value: characterTable.value?.defaultWeaponId || '-', mono: true },
+  {
+    label: t('warfarin.common.department'),
+    value:
+      resolveLocalizedEntityName(
+        charTagTable.value?.blocTagId,
+        props.refs,
+        props.localNameMap,
+        props.itemDefsByKeyHash,
+      ) ||
+      characterTable.value?.department ||
+      '-',
+  },
+  {
+    label: t('warfarin.common.defaultWeapon'),
+    value: resolveLocalizedEntityName(
+      characterTable.value?.defaultWeaponId,
+      props.refs,
+      props.localNameMap,
+      props.itemDefsByKeyHash,
+    ),
+  },
 ]);
 
 const cvEntries = computed(() => {
@@ -230,10 +320,10 @@ const cvEntries = computed(() => {
       ? characterTable.value.cvName
       : {};
   return [
-    { label: '中文CV', value: cv.ChiCVName },
-    { label: '英文CV', value: cv.EngCVName },
-    { label: '日文CV', value: cv.JapCVName },
-    { label: '韩文CV', value: cv.KorCVName },
+    { label: 'CV CN', value: cv.ChiCVName },
+    { label: 'CV EN', value: cv.EngCVName },
+    { label: 'CV JP', value: cv.JapCVName },
+    { label: 'CV KR', value: cv.KorCVName },
   ].filter(
     (entry): entry is { label: string; value: string } =>
       typeof entry.value === 'string' && entry.value.trim().length > 0,
@@ -245,28 +335,48 @@ const tagEntries = computed(() => {
   const table = charTagTable.value;
   const pushArray = (label: string, value: unknown) => {
     const arr = toArray(value)
-      .map((entry) => toText(entry))
+      .map((entry) =>
+        resolveLocalizedEntityName(entry, props.refs, props.localNameMap, props.itemDefsByKeyHash),
+      )
       .filter((entry) => entry.length > 0);
     if (arr.length) tags.push({ label, value: arr.join(', ') });
   };
-  if (typeof table.raceTagId === 'string' && table.raceTagId)
-    tags.push({ label: '种族', value: table.raceTagId });
-  if (typeof table.blocTagId === 'string' && table.blocTagId)
-    tags.push({ label: '阵营', value: table.blocTagId });
-  pushArray('专家', table.expertTagIds);
-  pushArray('性格', table.dispositionTagIds);
-  pushArray('爱好', table.hobbyTagIds);
-  pushArray('厌恶', table.behaviourHateTagIds);
-  pushArray('礼物偏好', table.giftPreferTagId);
+  if (typeof table.raceTagId === 'string' && table.raceTagId) {
+    tags.push({
+      label: t('warfarin.common.race'),
+      value: resolveLocalizedEntityName(
+        table.raceTagId,
+        props.refs,
+        props.localNameMap,
+        props.itemDefsByKeyHash,
+      ),
+    });
+  }
+  if (typeof table.blocTagId === 'string' && table.blocTagId) {
+    tags.push({
+      label: t('warfarin.common.faction'),
+      value: resolveLocalizedEntityName(
+        table.blocTagId,
+        props.refs,
+        props.localNameMap,
+        props.itemDefsByKeyHash,
+      ),
+    });
+  }
+  pushArray(t('warfarin.common.expertise'), table.expertTagIds);
+  pushArray(t('warfarin.common.disposition'), table.dispositionTagIds);
+  pushArray(t('warfarin.common.hobbies'), table.hobbyTagIds);
+  pushArray(t('warfarin.common.behaviorHate'), table.behaviourHateTagIds);
+  pushArray(t('warfarin.common.giftPreference'), table.giftPreferTagId);
   return tags;
 });
 
 const itemEntries = computed(() => {
   if (!itemTable.value) return [];
   return [
-    { label: 'Item ID', value: itemTable.value.id || '-', mono: true },
-    { label: 'Item Name', value: itemTable.value.name || '-' },
-    { label: 'Icon ID', value: itemTable.value.iconId || '-', mono: true },
+    { label: t('warfarin.common.itemId'), value: itemTable.value.id || '-', mono: true },
+    { label: t('warfarin.common.itemName'), value: itemTable.value.name || '-' },
+    { label: t('warfarin.common.iconId'), value: itemTable.value.iconId || '-', mono: true },
   ];
 });
 
@@ -278,6 +388,7 @@ const attributeStages = computed(() => {
     bucket.push(entry);
     grouped.set(breakStage, bucket);
   });
+
   return Array.from(grouped.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([breakStage, entries]) => {
@@ -300,28 +411,80 @@ const attributeStages = computed(() => {
           values[type] = attr.attrValue;
           typeSet.add(type);
         });
-        rows.push({ level, values });
+        const levelKey = toText(level);
+        const ref = isRecordLike(levelRefTable.value[levelKey]) ? levelRefTable.value[levelKey] : {};
+        rows.push({
+          level,
+          values,
+          expCost: ref.exp,
+          goldCost: ref.gold,
+        });
       });
       rows.sort((a, b) => Number(a.level) - Number(b.level));
+      const attrTypes = Array.from(typeSet).sort((a, b) => {
+        const preferred = ['39', '40', '41', '42', '2', '1'];
+        const aIndex = preferred.indexOf(a);
+        const bIndex = preferred.indexOf(b);
+        if (aIndex >= 0 || bIndex >= 0) {
+          if (aIndex < 0) return 1;
+          if (bIndex < 0) return -1;
+          return aIndex - bIndex;
+        }
+        return Number(a) - Number(b);
+      });
       return {
         breakStage,
-        entries,
+        label: `${t('warfarin.common.breakStage')} ${breakStage}`,
         rows,
-        attrTypes: Array.from(typeSet).sort((a, b) => Number(a) - Number(b)),
+        attrTypes,
       };
     })
     .filter((stage) => stage.rows.length > 0 && stage.attrTypes.length > 0);
 });
 
-const potentialBundles = computed(() =>
-  toArray<RecordLike>(potentialTable.value.potentialUnlockBundle),
-);
+const attributeSummaryColumns = computed(() => {
+  const available = new Set(
+    attributeStages.value.flatMap((stage) =>
+      stage.rows.map((row) => Number(row.level)).filter((level) => Number.isFinite(level)),
+    ),
+  );
+  return [1, 20, 40, 60, 80, 90].filter((level) => available.has(level));
+});
 
-const growthNodes = computed(() =>
+const attributeSummaryRows = computed(() => {
+  const byLevel = new Map<number, AttributeStageRow>();
+  attributeStages.value.forEach((stage) => {
+    stage.rows.forEach((row) => {
+      const level = Number(row.level);
+      if (Number.isFinite(level)) byLevel.set(level, row);
+    });
+  });
+  const attrTypes = attributeStages.value[0]?.attrTypes ?? [];
+  return attrTypes.map((attrType) => ({
+    attrType,
+    label: attrLabel(attrType),
+    values: Object.fromEntries(
+      attributeSummaryColumns.value.map((level) => [level, byLevel.get(level)?.values[attrType]]),
+    ),
+  }));
+});
+
+function levelLabel(level: number): string {
+  return `${t('warfarin.common.level')} ${level}`;
+}
+
+const promotionNodes = computed<Array<RecordLike & { description: unknown }>>(() =>
   Object.values(
     isRecordLike(growthTable.value.charBreakCostMap) ? growthTable.value.charBreakCostMap : {},
-  ).filter((entry): entry is RecordLike => isRecordLike(entry)),
+  )
+    .filter((entry): entry is RecordLike => isRecordLike(entry) && Number(entry.nodeType ?? 0) === 1)
+    .map((entry) => ({
+      ...entry,
+      description: pickWarfarinText(entry),
+    })),
 );
+
+const potentialBundles = computed(() => toArray<RecordLike>(potentialTable.value.potentialUnlockBundle));
 
 const snapshotEntries = computed(() =>
   Object.values(isRecordLike(props.detail?.snapshots) ? props.detail.snapshots : {}).filter(

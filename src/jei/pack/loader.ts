@@ -85,6 +85,17 @@ async function fetchSharedJson(
   return task;
 }
 
+export async function loadPackSharedJson(
+  packId: string,
+  relativePath: string,
+): Promise<Record<string, unknown> | null> {
+  const normalized = relativePath.trim();
+  if (!packId || !normalized) return null;
+  const base = packBaseUrl(packId);
+  const shared = await fetchSharedJson(base, packId, normalized);
+  return isRecordLike(shared) ? shared : null;
+}
+
 async function tryFetchIndexTimestamp(baseUrl: string, packId: string): Promise<string | null> {
   try {
     // 尝试获取 index.html (通常是 baseUrl 对应的页面)

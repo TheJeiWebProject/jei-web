@@ -1,66 +1,134 @@
 <template>
   <div>
-    <section v-if="skillGroups.length" class="ww__section">
-      <h3 class="ww__title">Skill Level Up</h3>
-      <q-expansion-item
-        v-for="group in skillGroups"
-        :key="group.skillGroupId"
-        dense
-        expand-separator
-        switch-toggle-side
-        :label="group.name || group.skillGroupId"
-        class="ww__expansion"
-      >
-        <div v-if="group.desc" class="ww__prose q-mb-md" v-html="formatWikiHtml(group.desc)"></div>
-        <WDataTable :columns="skillLevelColumns" :rows="group.levels.map(formatSkillLevel)" />
-      </q-expansion-item>
-    </section>
-
-    <section v-if="skillPatchGroups.length" class="ww__section">
-      <h3 class="ww__title">Skill Patches / 技能</h3>
-      <q-expansion-item
-        v-for="group in skillPatchGroups"
-        :key="group.skillId"
-        dense
-        expand-separator
-        switch-toggle-side
-        :label="group.name || group.skillId"
-        class="ww__expansion"
-      >
-        <div class="ww__stack ww__stack--compact">
-          <div v-for="patch in group.patches" :key="formatScalar(patch.level)" class="ww__panel">
-            <div class="ww__panel-title">Lv {{ patch.level }} · {{ patch.skillName || '-' }}</div>
-            <div class="ww__prose" v-html="formatWikiHtml(patch.description)"></div>
-            <div v-if="toArray(patch.blackboard).length" class="ww__muted">
-              {{ formatBlackboard(patch.blackboard) }}
+    <section v-if="talentEntries.length" id="operator-talents" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.talents') }}</h3>
+      <div class="ww__stack ww__stack--compact">
+        <div v-for="node in talentEntries" :key="node.key" class="ww__talent-card">
+          <div class="ww__talent-head">
+            <div class="ww__talent-icon-box">
+              <img
+                v-if="node.icon"
+                :src="node.icon"
+                :alt="node.name"
+                class="ww__talent-icon"
+              />
+              <div v-else class="ww__talent-icon-fallback">{{ node.name.slice(0, 1) || '?' }}</div>
+            </div>
+            <div class="ww__talent-copy">
+              <div class="ww__talent-name">{{ node.name }}</div>
+              <div class="ww__talent-sub">{{ node.unlockLabel }}</div>
             </div>
           </div>
-        </div>
-      </q-expansion-item>
-    </section>
-
-    <section v-if="potentialEffectEntries.length" class="ww__section">
-      <h3 class="ww__title">Potential Talent Effects / 潜能天赋</h3>
-      <div class="ww__stack ww__stack--compact">
-        <div v-for="entry in potentialEffectEntries" :key="entry.key" class="ww__panel">
-          <div class="ww__panel-title">{{ entry.title }}</div>
-          <div class="ww__panel-sub ww__value--mono">{{ entry.key }}</div>
-          <div
-            v-if="entry.description"
-            class="ww__prose"
-            v-html="formatWikiHtml(entry.description)"
-          ></div>
+          <WTextRenderer
+            :value="node.description"
+            :local-name-map="localNameMap"
+            :id-to-pack-item-id="idToPackItemId"
+            :item-defs-by-key-hash="itemDefsByKeyHash"
+            :refs="refs"
+            :blackboard="node.blackboard"
+            class-name="ww__talent-desc"
+          />
         </div>
       </div>
     </section>
 
-    <section v-if="spaceshipSkills.length" class="ww__section">
-      <h3 class="ww__title">Spaceship Skills / 飞船技能</h3>
+    <section v-if="potentialEffectEntries.length" id="operator-potential-effects" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.potentials') }}</h3>
+      <div class="ww__stack">
+        <div v-for="entry in potentialEffectEntries" :key="entry.key" class="ww__potential-card">
+          <div class="ww__potential-index">{{ entry.level }}</div>
+          <div class="ww__potential-body">
+            <div class="ww__potential-name">{{ entry.title }}</div>
+            <WTextRenderer
+              :value="entry.description"
+              :local-name-map="localNameMap"
+              :id-to-pack-item-id="idToPackItemId"
+            :item-defs-by-key-hash="itemDefsByKeyHash"
+            :refs="refs"
+            :blackboard="entry.blackboard"
+            semantic
+            class-name="ww__potential-desc"
+          />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="combatSkillGroups.length" id="operator-combat-skills" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.combatSkills') }}</h3>
+      <div class="ww__stack">
+        <div v-for="group in combatSkillGroups" :key="group.id" class="ww__panel">
+          <div class="ww__panel-title">{{ group.name }}</div>
+          <div class="ww__panel-sub">{{ group.kindLabel }}</div>
+          <WTextRenderer
+            v-if="group.description"
+            :value="group.description"
+            :local-name-map="localNameMap"
+            :id-to-pack-item-id="idToPackItemId"
+            :item-defs-by-key-hash="itemDefsByKeyHash"
+            :refs="refs"
+            :blackboard="group.blackboard"
+            semantic
+          />
+
+          <div v-if="group.rows.length" class="ww__table-wrap q-mt-md">
+            <table class="ww__table ww__table--wide">
+              <thead>
+                <tr>
+                  <th>{{ t('warfarin.common.stat') }}</th>
+                  <th v-for="level in group.levelLabels" :key="level">{{ level }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in group.rows" :key="row.label">
+                  <td>{{ row.label }}</td>
+                  <td v-for="level in group.levelLabels" :key="`${row.label}-${level}`">
+                    {{ row.values[level] ?? '-' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <q-expansion-item
+            v-if="group.materialRows.length"
+            dense
+            expand-separator
+            switch-toggle-side
+            :label="t('warfarin.common.skillMaterialCost')"
+            class="ww__expansion q-mt-md"
+          >
+            <div class="ww__material-upgrades">
+              <div v-for="material in group.materialRows" :key="material.label" class="ww__material-column">
+                <div class="ww__material-column-title">{{ material.label }}</div>
+                <WItemCostGrid :entries="material.materials" compact />
+              </div>
+            </div>
+          </q-expansion-item>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="spaceshipGroups.length" id="operator-base-skills" class="ww__section">
+      <h3 class="ww__title">{{ t('warfarin.operator.baseSkills') }}</h3>
       <div class="ww__stack ww__stack--compact">
-        <div v-for="skill in spaceshipSkills" :key="skill.skillId" class="ww__panel">
-          <div class="ww__panel-title">{{ skill.name || skill.skillId }}</div>
-          <div v-if="skill.desc" class="ww__prose" v-html="formatWikiHtml(skill.desc)"></div>
-          <div class="ww__panel-sub ww__value--mono">{{ skill.skillId }}</div>
+        <div v-for="group in spaceshipGroups" :key="group.title" class="ww__panel">
+          <div class="ww__panel-title">{{ group.title }}</div>
+          <div class="ww__stack ww__stack--compact q-mt-md">
+            <div v-for="skill in group.skills" :key="skill.skillId" class="ww__subpanel">
+              <div class="ww__panel-title">{{ skill.name }}</div>
+              <div v-if="skill.unlockHint" class="ww__panel-sub">{{ skill.unlockHint }}</div>
+              <WTextRenderer
+                v-if="skill.desc"
+                :value="skill.desc"
+                compact
+                :local-name-map="localNameMap"
+                :id-to-pack-item-id="idToPackItemId"
+                :item-defs-by-key-hash="itemDefsByKeyHash"
+                :refs="refs"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -69,23 +137,31 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ItemDef } from 'src/jei/types';
-import WDataTable from './shared/WDataTable.vue';
+import WTextRenderer from './shared/WTextRenderer.vue';
+import WItemCostGrid from './shared/WItemCostGrid.vue';
 import {
+  type MaterialCostEntry,
   type RecordLike,
   isRecordLike,
   toArray,
-  formatWikiHtml,
+  normalizeMaterialCosts,
   formatScalar,
-  formatRequiredItems,
+  toCdnAssetUrl,
   toText,
 } from './utils';
+import { buildWarfarinBlackboardMap, pickWarfarinText } from './text';
 
 const props = defineProps<{
   detail: RecordLike;
+  refs: RecordLike;
   localNameMap: RecordLike;
+  idToPackItemId?: RecordLike | undefined;
   itemDefsByKeyHash?: Record<string, ItemDef> | undefined;
 }>();
+
+const { t } = useI18n();
 
 const growthTable = computed<RecordLike>(() =>
   isRecordLike(props.detail.charGrowthTable) ? props.detail.charGrowthTable : {},
@@ -95,106 +171,222 @@ const potentialEffects = computed<RecordLike>(() =>
     ? props.detail.potentialTalentEffectTable
     : {},
 );
+const potentialTable = computed<RecordLike>(() =>
+  isRecordLike(props.detail.characterPotentialTable) ? props.detail.characterPotentialTable : {},
+);
 const skillPatchTable = computed<RecordLike>(() =>
   isRecordLike(props.detail.skillPatchTable) ? props.detail.skillPatchTable : {},
 );
 
-const skillLevelColumns = [
-  { key: 'level', label: 'Level' },
-  { key: 'goldCost', label: 'Gold' },
-  { key: 'materials', label: 'Materials' },
-];
+function toSnakeCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
 
-const skillGroups = computed(() => {
-  const groupMap = isRecordLike(growthTable.value.skillGroupMap)
-    ? growthTable.value.skillGroupMap
-    : {};
-  const levelUps = toArray<RecordLike>(growthTable.value.skillLevelUp);
-  return Object.values(groupMap)
-    .filter((entry): entry is RecordLike => isRecordLike(entry))
+function skillLevelLabel(level: number): string {
+  if (level >= 10) return `M${level - 9}`;
+  return String(level);
+}
+
+const talentEntries = computed(() => {
+  const talentNodeMap = isRecordLike(growthTable.value.talentNodeMap) ? growthTable.value.talentNodeMap : {};
+  return Object.values(talentNodeMap)
+    .filter((entry): entry is RecordLike => isRecordLike(entry) && Number(entry.nodeType ?? 0) === 4)
     .map((entry) => {
-      const skillGroupId = typeof entry.skillGroupId === 'string' ? entry.skillGroupId : '';
+      const passive = isRecordLike(entry.passiveSkillNodeInfo) ? entry.passiveSkillNodeInfo : {};
+      const effectId = typeof passive.talentEffectId === 'string' ? passive.talentEffectId : '';
+      const rawEffect = potentialEffects.value[effectId];
+      const effect = isRecordLike(rawEffect) ? rawEffect : {};
+      const breakStage = Number(passive.breakStage ?? 0);
+      const level = Number(passive.level ?? 1);
       return {
-        skillGroupId,
-        name: typeof entry.name === 'string' ? entry.name : skillGroupId,
-        desc: entry.desc,
-        sortKey: Number(entry.skillGroupType ?? 999),
-        levels: levelUps
-          .filter((item) => item.skillGroupId === skillGroupId)
-          .sort((a, b) => Number(a.level ?? 0) - Number(b.level ?? 0)),
+        key: typeof entry.nodeId === 'string' ? entry.nodeId : effectId,
+        name: typeof passive.name === 'string' ? passive.name : effectId,
+        level,
+        effectId,
+        unlockLabel:
+          level > 1
+            ? t('warfarin.common.breakStageEffectUpgrade', { breakStage })
+            : t('warfarin.common.breakStageUnlock', { breakStage }),
+        description: pickWarfarinText(effect),
+        blackboard: buildWarfarinBlackboardMap(effect),
+        icon: toCdnAssetUrl(passive.iconId),
+        index: Number(passive.index ?? 0),
+        breakStage,
       };
     })
-    .sort((a, b) => a.sortKey - b.sortKey || a.name.localeCompare(b.name));
+    .sort((a, b) => a.index - b.index || a.level - b.level || a.name.localeCompare(b.name));
 });
-
-function formatSkillLevel(entry: RecordLike): Record<string, unknown> {
-  return {
-    level: `Lv ${formatScalar(entry.level)}`,
-    goldCost: formatScalar(entry.goldCost),
-    materials:
-      formatRequiredItems(entry.itemBundle, props.localNameMap, props.itemDefsByKeyHash) || '-',
-  };
-}
-
-const skillPatchGroups = computed(() => {
-  const table = skillPatchTable.value;
-  return Object.entries(table)
-    .map(([skillId, value]) => {
-      const bundles = toArray<RecordLike>(
-        isRecordLike(value) ? (value.SkillPatchDataBundle ?? value) : [],
-      );
-      const patches = bundles
-        .filter((b): b is RecordLike => isRecordLike(b))
-        .sort((a, b) => Number(a.level ?? 0) - Number(b.level ?? 0));
-      const name = patches[0]?.skillName;
-      return {
-        skillId,
-        name: typeof name === 'string' ? name : undefined,
-        patches,
-      };
-    })
-    .filter((g) => g.patches.length > 0);
-});
-
-function formatBlackboard(blackboard: unknown): string {
-  return toArray<RecordLike>(blackboard)
-    .map((entry) => `${toText(entry.key, '?')} = ${formatScalar(entry.value)}`)
-    .join(', ');
-}
 
 const potentialEffectEntries = computed(() =>
-  Object.entries(potentialEffects.value)
-    .map(([key, value]) => {
-      const entry = isRecordLike(value) ? value : {};
-      const title =
-        typeof entry.name === 'string' && entry.name.trim().length > 0 ? entry.name : key;
-      const candidate = toArray<RecordLike>(entry.candidates)[0];
-      const description =
-        entry.desc ?? entry.description ?? candidate?.description ?? candidate?.desc;
-      return { key, title, description };
+  toArray<RecordLike>(potentialTable.value.potentialUnlockBundle)
+    .map((bundle) => {
+      const effectId = typeof bundle.potentialEffectId === 'string' ? bundle.potentialEffectId : '';
+      const rawEffect = effectId ? potentialEffects.value[effectId] : undefined;
+      const entry = isRecordLike(rawEffect) ? rawEffect : {};
+      return {
+        key: effectId || toText(bundle.level),
+        level: Number(bundle.level ?? 0),
+        title: toText(bundle.name, effectId || '-'),
+        description: pickWarfarinText(entry),
+        blackboard: buildWarfarinBlackboardMap(entry),
+      };
     })
-    .filter((entry) => entry.description !== undefined && entry.description !== null),
+    .filter((entry) => toText(entry.description).trim().length > 0)
+    .sort((a, b) => a.level - b.level),
 );
 
-const spaceshipSkills = computed(() => {
+type CombatSkillGroup = {
+  id: string;
+  name: string;
+  kindLabel: string;
+  description: unknown;
+  blackboard: Record<string, number>;
+  levelLabels: string[];
+  rows: Array<{ label: string; values: Record<string, string> }>;
+  materialRows: Array<{ label: string; materials: MaterialCostEntry[] }>;
+};
+
+function extractPatchRows(bundles: RecordLike[]): Array<{ label: string; values: Record<string, string> }> {
+  const rowMap = new Map<string, Record<string, string>>();
+  bundles.forEach((bundle) => {
+    const level = Number(bundle.level ?? 0);
+    const levelLabel = skillLevelLabel(level);
+    const names = toArray(bundle.subDescNameList)
+      .map((entry) => toText(entry).trim())
+      .filter((entry) => entry.length > 0);
+    const values = toArray(bundle.subDescList).map((entry) => formatScalar(entry));
+    names.forEach((name, index) => {
+      const row = rowMap.get(name) ?? {};
+      row[levelLabel] = values[index] ?? '-';
+      rowMap.set(name, row);
+    });
+  });
+  return Array.from(rowMap.entries()).map(([label, values]) => ({ label, values }));
+}
+
+const combatSkillGroups = computed<CombatSkillGroup[]>(() => {
+  const groupMap = isRecordLike(growthTable.value.skillGroupMap) ? growthTable.value.skillGroupMap : {};
+  const skillLevelUps = toArray<RecordLike>(growthTable.value.skillLevelUp);
+  const allPatchEntries = Object.entries(skillPatchTable.value).filter((entry): entry is [string, RecordLike] =>
+    isRecordLike(entry[1]),
+  );
+
+  const groups = Object.values(groupMap)
+    .filter((entry): entry is RecordLike => isRecordLike(entry))
+    .map((group) => {
+      const id = typeof group.skillGroupId === 'string' ? group.skillGroupId : '';
+      const suffix = toSnakeCase(id.split('_').at(-1) || '');
+      let patchEntries = allPatchEntries.filter(([key]) => key.endsWith(`_${suffix}`));
+      if (suffix === 'normal_attack') {
+        patchEntries = allPatchEntries.filter(
+          ([key, value]) => {
+            const firstBundle = toArray<RecordLike>(value.SkillPatchDataBundle)[0];
+            const iconId = typeof firstBundle?.iconId === 'string' ? firstBundle.iconId : '';
+            return (
+              key.includes('_attack') ||
+              key.includes('_plunging') ||
+              key.includes('_dash_attack') ||
+              iconId.startsWith('icon_attack_')
+            );
+          },
+        );
+      }
+      const bundles = patchEntries.flatMap(([, value]) =>
+        toArray<RecordLike>(value.SkillPatchDataBundle).filter((entry) => isRecordLike(entry)),
+      );
+      const levelLabels = Array.from(
+        new Set(bundles.map((bundle) => skillLevelLabel(Number(bundle.level ?? 0))).filter(Boolean)),
+      );
+      const materialRows = skillLevelUps
+        .filter((entry) => entry.skillGroupId === id)
+        .map((entry) => ({
+          label: skillLevelLabel(Number(entry.level ?? 0)),
+          materials: normalizeMaterialCosts(
+            entry.itemBundle,
+            props.localNameMap,
+            props.itemDefsByKeyHash,
+            props.idToPackItemId,
+          ).concat(
+            Number(entry.goldCost ?? 0) > 0
+              ? [
+                  {
+                    rawId: 'item_gold',
+                    packItemId: undefined,
+                    name: t('warfarin.common.creditCost'),
+                    count: entry.goldCost,
+                    icon: undefined,
+                  },
+                ]
+              : [],
+          ),
+        }));
+
+      return {
+        id,
+        name: typeof group.name === 'string' ? group.name : id,
+        kindLabel:
+          Number(group.skillGroupType ?? -1) === 0
+            ? t('warfarin.common.basicAttack')
+            : Number(group.skillGroupType ?? -1) === 1
+              ? t('warfarin.common.battleSkill')
+              : Number(group.skillGroupType ?? -1) === 2
+                ? t('warfarin.common.ultimateSkill')
+                : Number(group.skillGroupType ?? -1) === 3
+                  ? t('warfarin.common.comboSkill')
+                  : t('warfarin.common.skill'),
+        description: pickWarfarinText(group),
+        blackboard: buildWarfarinBlackboardMap(bundles),
+        levelLabels,
+        rows: extractPatchRows(bundles),
+        materialRows,
+        sortKey: Number(group.skillGroupType ?? 999),
+      };
+    })
+    .filter((group) => group.rows.length || group.materialRows.length || toText(group.description).trim().length > 0);
+
+  return groups.sort((a, b) => a.sortKey - b.sortKey || a.name.localeCompare(b.name));
+});
+
+const spaceshipGroups = computed(() => {
   const charSkillTable = isRecordLike(props.detail.spaceshipCharSkillTable)
     ? props.detail.spaceshipCharSkillTable
     : {};
   const skillTable = isRecordLike(props.detail.spaceshipSkillTable)
     ? props.detail.spaceshipSkillTable
     : {};
-  const charSkillIds = Object.values(charSkillTable)
+
+  const unlockHintBySkillId = new Map<string, string>();
+  Object.values(charSkillTable)
     .filter((entry): entry is RecordLike => isRecordLike(entry))
-    .flatMap((entry) => toArray<string>(entry.skillIds ?? entry.skillIdList));
-  return charSkillIds
-    .map((skillId) => {
-      const skill = isRecordLike(skillTable[skillId]) ? skillTable[skillId] : {};
-      return {
+    .forEach((entry) => {
+      const skillId = typeof entry.skillId === 'string' ? entry.skillId : '';
+      if (skillId && typeof entry.unlockHint === 'string') {
+        unlockHintBySkillId.set(skillId, entry.unlockHint);
+      }
+    });
+
+  const groups = new Map<string, Array<{ skillId: string; name: string; desc: unknown; unlockHint: string }>>();
+  Object.values(skillTable)
+    .filter((entry): entry is RecordLike => isRecordLike(entry))
+    .forEach((skill) => {
+      const title = typeof skill.talentName === 'string' ? skill.talentName : toText(skill.name);
+      const bucket = groups.get(title) ?? [];
+      const skillId = typeof skill.id === 'string' ? skill.id : '';
+      bucket.push({
         skillId,
-        name: skill.name,
-        desc: skill.desc ?? skill.description,
-      };
-    })
-    .filter((s) => s.name || s.desc);
+        name: typeof skill.name === 'string' ? skill.name : skillId,
+        desc: pickWarfarinText(skill),
+        unlockHint: unlockHintBySkillId.get(skillId) ?? '',
+      });
+      groups.set(title, bucket);
+    });
+
+  return Array.from(groups.entries()).map(([title, skills]) => ({
+    title,
+    skills: skills.sort((a, b) => a.name.localeCompare(b.name)),
+  }));
 });
 </script>

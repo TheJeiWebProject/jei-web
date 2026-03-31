@@ -102,7 +102,7 @@
                   <tr>
                     <th>Level</th>
                     <th v-for="type in stage.attrTypes" :key="type">
-                      {{ getAttrName(type) }}
+                      {{ attrLabel(type) }}
                       <span class="ww__attr-type">#{{ type }}</span>
                     </th>
                   </tr>
@@ -154,6 +154,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import WInfoGrid from './shared/WInfoGrid.vue';
 import WDataTable from './shared/WDataTable.vue';
 import WJsonViewer from './shared/WJsonViewer.vue';
@@ -177,6 +178,9 @@ const props = defineProps<{
   refs: RecordLike;
   localNameMap: RecordLike;
 }>();
+
+const { locale } = useI18n();
+const attrLabel = (attrType: string | number) => getAttrName(attrType, locale.value);
 
 const activeTab = ref('overview');
 
@@ -311,7 +315,7 @@ const independentAttrs = computed(() => {
   return attrs
     .filter((a) => a.attrType !== undefined && a.attrValue !== undefined)
     .map((a) => ({
-      label: getAttrName(toText(a.attrType)),
+      label: attrLabel(toText(a.attrType)),
       value: formatScalar(a.attrValue),
     }));
 });
