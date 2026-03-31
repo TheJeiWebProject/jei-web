@@ -66,9 +66,11 @@
       transition-hide="fade"
     >
       <div
+        ref="tooltipContentEl"
         :style="{ pointerEvents: tooltipMouseInteractive ? 'auto' : 'none' }"
         @mouseenter="onTooltipMouseEnter"
         @mouseleave="onTooltipMouseLeave"
+        @wheel="onTooltipWheel"
       >
         <stack-tooltip-card
           :title="tooltipTitle"
@@ -107,6 +109,8 @@ const props = withDefaults(
     showName?: boolean;
     showSubtitle?: boolean;
     showAmount?: boolean;
+    showRarity?: boolean;
+    subtitleOverride?: string;
     lazyVisual?: boolean;
   }>(),
   {
@@ -115,6 +119,8 @@ const props = withDefaults(
     showName: true,
     showSubtitle: true,
     showAmount: true,
+    showRarity: true,
+    subtitleOverride: '',
     lazyVisual: false,
   },
 );
@@ -150,6 +156,7 @@ const iconSrcRaw = computed(() => {
 });
 const stackViewEl = ref<HTMLElement | null>(null);
 const tooltipRef = ref<{ show?: () => void; hide?: () => void } | null>(null);
+const tooltipContentEl = ref<HTMLElement | null>(null);
 const tooltipVisible = ref(false);
 const tooltipHoverLock = ref(false);
 const tooltipCardMaxHeight = ref(0);
@@ -178,6 +185,7 @@ const itemDef = computed<ItemDef | undefined>(() => {
 const rarity = computed(() => itemDef.value?.rarity);
 const rarityColor = computed(() => rarity.value?.color || '');
 const rarityLabel = computed(() => {
+  if (!props.showRarity) return '';
   const stars = rarity.value?.stars;
   if (!stars) return '';
   return `${stars}★`;
@@ -316,6 +324,7 @@ const displayName = computed(() => {
 });
 
 const subtitle = computed(() => {
+  if (props.subtitleOverride) return props.subtitleOverride;
   if (!props.showAmount) return '';
   const s = stack.value;
   if (!s) return '';
@@ -824,6 +833,16 @@ function onTooltipMouseEnter() {
 function onTooltipMouseLeave() {
   tooltipHoverLock.value = false;
   scheduleTooltipHide();
+}
+
+function onTooltipWheel(event: WheelEvent) {
+  if (!tooltipMouseInteractive.value) return;
+  const scrollEl = tooltipContentEl.value?.querySelector('.stack-tooltip');
+  if (!(scrollEl instanceof HTMLElement)) return;
+  if (scrollEl.scrollHeight <= scrollEl.clientHeight) return;
+  scrollEl.scrollTop += event.deltaY;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 watch(tooltipMouseInteractive, (interactive) => {

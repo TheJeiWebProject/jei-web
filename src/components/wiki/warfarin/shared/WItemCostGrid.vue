@@ -6,18 +6,16 @@
       class="ww__cost-card"
       :class="{ 'ww__cost-card--clickable': !!entry.packItemId }"
     >
-      <div v-if="entry.packItemId && itemDefsByKeyHash" class="ww__cost-stack-wrap">
-        <stack-view
-          class="ww__cost-stack"
-          :content="{ kind: 'item', id: entry.packItemId, amount: 1 }"
-          :item-defs-by-key-hash="itemDefsByKeyHash"
-          variant="slot"
-          :show-subtitle="false"
-          :show-amount="false"
-          @item-click="handleClick"
-        />
-        <div class="ww__cost-count">{{ formatScalar(entry.count) }}</div>
-      </div>
+      <stack-view
+        v-if="entry.packItemId && itemDefsByKeyHash"
+        class="ww__cost-stack"
+        :content="{ kind: 'item', id: entry.packItemId, amount: 1 }"
+        :item-defs-by-key-hash="itemDefsByKeyHash"
+        variant="slot"
+        :show-rarity="false"
+        :subtitle-override="`x${formatScalar(entry.count)}`"
+        @item-click="handleClick"
+      />
       <button
         v-else
         type="button"
@@ -33,9 +31,9 @@
             class="ww__cost-image"
           />
           <div v-else class="ww__cost-fallback">{{ entry.name.slice(0, 1) }}</div>
-          <div class="ww__cost-count">{{ formatScalar(entry.count) }}</div>
         </div>
         <div class="ww__cost-name">{{ entry.name }}</div>
+        <div class="ww__cost-count-row">x{{ formatScalar(entry.count) }}</div>
       </button>
     </div>
   </div>
