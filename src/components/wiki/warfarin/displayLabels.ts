@@ -604,19 +604,43 @@ const wordOverrides: Record<string, { zh: string; ja: string; en: string }> = {
   FluidReaction: { zh: '液体反应装置', ja: '液体反応装置', en: 'Fluid Reaction' },
   FluidConsume: { zh: '液体消耗装置', ja: '液体消費装置', en: 'Fluid Consume' },
   FluidSpray: { zh: '液体喷洒装置', ja: '液体噴射装置', en: 'Fluid Spray' },
-  VirtualFluidContainer: { zh: '虚拟液体容器', ja: '仮想液体コンテナ', en: 'Virtual Fluid Container' },
+  VirtualFluidContainer: {
+    zh: '虚拟液体容器',
+    ja: '仮想液体コンテナ',
+    en: 'Virtual Fluid Container',
+  },
   MachineCrafter: { zh: '机器制造台', ja: '機械製作台', en: 'Machine Crafter' },
   WeekRaid: { zh: '周常突袭', ja: '週次レイド', en: 'Week Raid' },
   DailyActivation: { zh: '每日激活', ja: '日次アクティブ', en: 'Daily Activation' },
   DomainRandGoods: { zh: '领域随机货物', ja: '領域ランダム物資', en: 'Domain Random Goods' },
   SpaceshipInfoTokens: { zh: '飞船情报代币', ja: '艦内情報トークン', en: 'Spaceship Info Tokens' },
-  GemLockedTermBox: { zh: '源石锁定终端箱', ja: '源石ロック端末ボックス', en: 'Gem Locked Terminal Box' },
+  GemLockedTermBox: {
+    zh: '源石锁定终端箱',
+    ja: '源石ロック端末ボックス',
+    en: 'Gem Locked Terminal Box',
+  },
   BusinessCardTopic: { zh: '名片主题', ja: '名刺テーマ', en: 'Business Card Topic' },
   TicketGacha: { zh: '抽卡券', ja: 'ガチャチケット', en: 'Gacha Ticket' },
-  TicketGachaLTReward: { zh: '长线抽卡券奖励', ja: '長期ガチャチケット報酬', en: 'Long-Term Gacha Ticket Reward' },
-  TicketGachaLTItem: { zh: '长线抽卡券物品', ja: '長期ガチャチケットアイテム', en: 'Long-Term Gacha Ticket Item' },
-  TicketWeaponBoxLTReward: { zh: '长线武器箱奖励券', ja: '長期武器箱報酬チケット', en: 'Long-Term Weapon Box Reward Ticket' },
-  TicketWeaponBoxLTItem: { zh: '长线武器箱物品券', ja: '長期武器箱アイテムチケット', en: 'Long-Term Weapon Box Item Ticket' },
+  TicketGachaLTReward: {
+    zh: '长线抽卡券奖励',
+    ja: '長期ガチャチケット報酬',
+    en: 'Long-Term Gacha Ticket Reward',
+  },
+  TicketGachaLTItem: {
+    zh: '长线抽卡券物品',
+    ja: '長期ガチャチケットアイテム',
+    en: 'Long-Term Gacha Ticket Item',
+  },
+  TicketWeaponBoxLTReward: {
+    zh: '长线武器箱奖励券',
+    ja: '長期武器箱報酬チケット',
+    en: 'Long-Term Weapon Box Reward Ticket',
+  },
+  TicketWeaponBoxLTItem: {
+    zh: '长线武器箱物品券',
+    ja: '長期武器箱アイテムチケット',
+    en: 'Long-Term Weapon Box Item Ticket',
+  },
   GachaRecruitmentLetter: { zh: '招募信', ja: '募集レター', en: 'Recruitment Letter' },
   WeaponPotentialUp: { zh: '武器潜能提升', ja: '武器潜在強化', en: 'Weapon Potential Up' },
   CharPotentialUp: { zh: '干员潜能提升', ja: 'オペレーター潜在強化', en: 'Character Potential Up' },
@@ -648,9 +672,7 @@ export function localizeWarfarinIdentifier(value: string, locale = 'en-US'): str
   const words = splitIdentifier(raw);
   if (!words.length) return raw;
   if (!locale.startsWith('zh') && !locale.startsWith('ja')) {
-    return words
-      .map((word) => acronymMap[word.toUpperCase()] || word)
-      .join(' ');
+    return words.map((word) => acronymMap[word.toUpperCase()] || word).join(' ');
   }
   const dict = locale.startsWith('zh') ? zhWords : jaWords;
   const mapped = words.map((word) => {
@@ -672,4 +694,85 @@ export function getWarfarinEnumLabel(
   }
   if (fallback && fallback.trim()) return fallback;
   return Number.isFinite(n) ? `Unknown(${n})` : '-';
+}
+
+function localizeRouteWord(word: string, locale: string): string {
+  const key = word.toLowerCase();
+  const zhWords: Record<string, string> = {
+    dungeon: '副本',
+    dung: '副本',
+    bossrush: '首领突袭',
+    shop: '商店',
+    common: '通用',
+    explore: '探索',
+    gacha: '寻访',
+    map: '地图',
+    greenticket: '绿票',
+    redticket: '红票',
+    lv: 'Lv',
+    ss: 'SS',
+  };
+  const jaWords: Record<string, string> = {
+    dungeon: 'ダンジョン',
+    dung: 'ダンジョン',
+    bossrush: 'ボスラッシュ',
+    shop: 'ショップ',
+    common: '共通',
+    explore: '探索',
+    gacha: 'ガチャ',
+    map: 'マップ',
+    greenticket: 'グリーンチケット',
+    redticket: 'レッドチケット',
+    lv: 'Lv',
+    ss: 'SS',
+  };
+  const enWords: Record<string, string> = {
+    dungeon: 'Dungeon',
+    dung: 'Dungeon',
+    bossrush: 'Boss Rush',
+    shop: 'Shop',
+    common: 'Common',
+    explore: 'Explore',
+    gacha: 'Gacha',
+    map: 'Map',
+    greenticket: 'Green Ticket',
+    redticket: 'Red Ticket',
+    lv: 'Lv',
+    ss: 'SS',
+  };
+  const dict = locale.startsWith('zh') ? zhWords : locale.startsWith('ja') ? jaWords : enWords;
+  return dict[key] ?? localizeWarfarinIdentifier(word, locale);
+}
+
+function formatRouteToken(token: string, locale: string): string {
+  const trimmed = token.trim();
+  if (!trimmed) return '';
+  const direct = localizeRouteWord(trimmed, locale);
+  if (direct !== trimmed) return direct;
+  const match = trimmed.match(/^([a-z]+)(\d+)$/i);
+  if (match) {
+    const prefix = match[1] ?? '';
+    const digits = match[2] ?? '';
+    return `${localizeRouteWord(prefix, locale)} ${digits}`.trim();
+  }
+  return localizeWarfarinIdentifier(trimmed, locale);
+}
+
+function humanizeRouteId(rawId: string, prefix: string, locale: string): string {
+  const normalized = rawId.trim();
+  if (!normalized) return '-';
+  const body = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+  const segments = body
+    .split('_')
+    .map((part) => formatRouteToken(part, locale))
+    .filter((part) => part.length > 0);
+  return segments.length ? segments.join(' · ') : normalized;
+}
+
+export function getWarfarinObtainWayLabel(id: string, locale = 'en-US'): string {
+  return humanizeRouteId(id, 'item_obtain_', locale);
+}
+
+export function getWarfarinDistributionLabel(id: string, locale = 'en-US'): string {
+  return humanizeRouteId(id, 'distribution_', locale);
 }

@@ -170,7 +170,11 @@ import {
   buildInfoEntries,
 } from './utils';
 import { displayEnemyTypeNames } from './genums';
-import { getWarfarinEnumLabel, localizeWarfarinIdentifier } from './displayLabels';
+import {
+  getWarfarinDistributionLabel,
+  getWarfarinEnumLabel,
+  localizeWarfarinIdentifier,
+} from './displayLabels';
 
 const props = defineProps<{
   detail: RecordLike;
@@ -259,7 +263,7 @@ const abilityDescIds = computed(() =>
 const distributionRows = computed(() =>
   distributionIds.value.map((id) => ({
     id,
-    name: toText(props.localNameMap[id], id),
+    name: toText(props.localNameMap[id]) || getWarfarinDistributionLabel(id, locale.value),
   })),
 );
 const enemyCategories = computed(() => {

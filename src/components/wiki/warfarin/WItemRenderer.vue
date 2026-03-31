@@ -19,7 +19,9 @@
     <section v-if="obtainWayIds.length" class="ww__section">
       <h3 class="ww__title">{{ l('Obtain Ways') }}</h3>
       <div class="ww__badges">
-        <span v-for="id in obtainWayIds" :key="id" class="ww__badge">{{ id }}</span>
+        <span v-for="id in obtainWayIds" :key="id" class="ww__badge" :title="id">
+          {{ getWarfarinObtainWayLabel(id, locale) }}
+        </span>
       </div>
     </section>
 
@@ -143,7 +145,11 @@ import {
   toText,
 } from './utils';
 import { itemTypeNames, itemShowingTypeNames } from './genums';
-import { getWarfarinEnumLabel, localizeWarfarinIdentifier } from './displayLabels';
+import {
+  getWarfarinEnumLabel,
+  getWarfarinObtainWayLabel,
+  localizeWarfarinIdentifier,
+} from './displayLabels';
 
 const props = defineProps<{
   detail: RecordLike;
