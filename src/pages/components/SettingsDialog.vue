@@ -289,6 +289,34 @@
                       class="full-width"
                       @click="$emit('refresh-pack-cache')"
                     />
+                    <div class="q-gutter-y-sm q-pt-xs">
+                      <div class="text-caption text-grey-7">
+                        导出当前聚合包里已合并和未合并候选的同名物品 lite 元数据，便于编写/校对聚合规则。
+                      </div>
+                      <q-btn
+                        outline
+                        color="primary"
+                        icon="content_copy"
+                        label="复制聚合合并分析 JSON"
+                        class="full-width"
+                        :disable="!aggregateExportAvailable"
+                        :loading="aggregateExportLoading"
+                        @click="$emit('copy:aggregate-merge-report')"
+                      />
+                      <q-btn
+                        outline
+                        color="secondary"
+                        icon="download"
+                        label="导出聚合合并分析 JSON"
+                        class="full-width"
+                        :disable="!aggregateExportAvailable"
+                        :loading="aggregateExportLoading"
+                        @click="$emit('download:aggregate-merge-report')"
+                      />
+                      <div v-if="!aggregateExportAvailable" class="text-caption text-grey-7">
+                        当前数据包不是聚合包，无法导出该分析信息。
+                      </div>
+                    </div>
                     <q-toggle
                       :label="t('showLoadingOverlay')"
                       :model-value="showLoadingOverlay"
@@ -805,6 +833,8 @@ const props = defineProps<{
   darkMode: DarkMode;
   debugLayout: boolean;
   debugNavPanel: boolean;
+  aggregateExportAvailable: boolean;
+  aggregateExportLoading: boolean;
   showLoadingOverlay: boolean;
   quantLineWidthScale: number;
   productionLineG6Scale: number;
@@ -884,6 +914,8 @@ const emit = defineEmits<{
   'update:dark-mode': [value: DarkMode];
   'update:debug-layout': [value: boolean];
   'update:debug-nav-panel': [value: boolean];
+  'copy:aggregate-merge-report': [];
+  'download:aggregate-merge-report': [];
   'update:show-loading-overlay': [value: boolean];
   'update:quant-line-width-scale': [value: number];
   'update:production-line-g6-scale': [value: number];

@@ -192,6 +192,10 @@
       @update:debug-layout="settingsStore.setDebugLayout($event)"
       :debug-nav-panel="settingsStore.debugNavPanel"
       @update:debug-nav-panel="settingsStore.setDebugNavPanel($event)"
+      :aggregate-export-available="aggregateMergeReportAvailable"
+      :aggregate-export-loading="aggregateMergeReportLoading"
+      @copy:aggregate-merge-report="onCopyAggregateMergeReport"
+      @download:aggregate-merge-report="onDownloadAggregateMergeReport"
       :show-loading-overlay="settingsStore.showLoadingOverlay"
       @update:show-loading-overlay="settingsStore.setShowLoadingOverlay($event)"
       :quant-line-width-scale="settingsStore.quantLineWidthScale"
@@ -378,6 +382,8 @@ import {
   type JeiIndex,
 } from 'src/jei/indexing/buildIndex';
 import { getItemLookupIds } from 'src/jei/indexing/itemLookup';
+import { buildTagIndex } from 'src/jei/tags/resolve';
+import { stableJsonStringify } from 'src/jei/utils/stableJson';
 import FavoritesPanel from './components/FavoritesPanel.vue';
 import ItemListPanel from './components/ItemListPanel.vue';
 import CenterPanel from './components/CenterPanel.vue';
@@ -613,11 +619,18 @@ const pageSize = ref(120);
 
 const settingsOpen = ref(false);
 const mirrorLatencyLoading = ref(false);
+const aggregateMergeReportLoading = ref(false);
 const dialogOpen = ref(false);
 const contextMenuRef = ref();
 const centerPanelRef = ref();
 const contextMenuOpen = ref(false);
 const contextMenuKeyHash = ref<string | null>(null);
+
+const aggregateMergeReportAvailable = computed(() => {
+  const currentPack = pack.value;
+  if (!currentPack) return false;
+  return getAggregateSourcePackIds(currentPack.manifest.packId).length > 0;
+});
 
 const activePackMirrorMode = computed(
   () => settingsStore.packMirrorSelectionModeByPack[activePackId.value] ?? 'auto',
@@ -1666,6 +1679,414 @@ async function copyText(text: string): Promise<void> {
     return;
   }
   window.prompt('请复制以下内容', text);
+}
+
+type AggregateMergeSourceRef = {
+  sourcePackId: string;
+  id: string;
+  name?: string;
+  tags?: string[];
+  source?: string;
+  rarity?: ItemDef['rarity'];
+  meta?: Record<string, unknown>;
+};
+
+type AggregateMergeItemSnapshot = {
+  key: ItemKey;
+  name: string;
+  tags: string[];
+  tagIds: string[];
+  source?: string;
+  rarity?: ItemDef['rarity'];
+  detailPath?: string;
+  jeiwebMeta?: Record<string, unknown>;
+};
+
+type AggregateMergeSourceSnapshot = AggregateMergeItemSnapshot & {
+  sourcePackId: string;
+  sourceItemId: string;
+  lookup: 'matched' | 'fallback';
+  candidateCount: number;
+};
+
+type AggregateMergeReportEntry = {
+  canonical: AggregateMergeItemSnapshot;
+  sourceCount: number;
+  sources: AggregateMergeSourceSnapshot[];
+};
+
+type AggregateUnmergedCandidateItem = AggregateMergeSourceSnapshot & {
+  merged: boolean;
+};
+
+type AggregateUnmergedCandidateGroup = {
+  nameKey: string;
+  displayNames: string[];
+  sourcePackIds: string[];
+  totalItemCount: number;
+  unmergedItemCount: number;
+  items: AggregateUnmergedCandidateItem[];
+};
+
+type AggregateMergeReport = {
+  version: 1;
+  generatedAt: string;
+  packId: string;
+  packDisplayName: string;
+  sourcePackIds: string[];
+  mergedItemCount: number;
+  groups: AggregateMergeReportEntry[];
+  unmergedCandidateCount: number;
+  unmergedGroups: AggregateUnmergedCandidateGroup[];
+};
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneJsonValue<T>(value: T): T {
+  return JSON.parse(stableJsonStringify(value)) as T;
+}
+
+function stripAggregateMeta(meta: unknown): Record<string, unknown> | undefined {
+  if (!isRecordLike(meta)) return undefined;
+  const next = cloneJsonValue(meta);
+  delete next.aggregateHoverSources;
+  delete next.aggregateDetailSources;
+  delete next.aggregateSourcePackId;
+  delete next.aggregateSourceItemId;
+  delete next.aggregateOriginalItemIds;
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function getSortedTagIds(tagIdsByItemId: Map<string, Set<string>>, itemId: string): string[] {
+  return Array.from(tagIdsByItemId.get(itemId) ?? []).sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeAggregateExportItemName(name: string): string {
+  return name.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function buildAggregateMergeItemSnapshot(item: ItemDef, tagIds: string[]): AggregateMergeItemSnapshot {
+  const jeiwebMeta = stripAggregateMeta(item.extensions?.jeiweb?.meta);
+  return {
+    key: cloneJsonValue(item.key),
+    name: item.name,
+    tags: [...(item.tags ?? [])],
+    tagIds: [...tagIds],
+    ...(item.source ? { source: item.source } : {}),
+    ...(item.rarity ? { rarity: cloneJsonValue(item.rarity) } : {}),
+    ...(item.detailPath ? { detailPath: item.detailPath } : {}),
+    ...(jeiwebMeta ? { jeiwebMeta } : {}),
+  };
+}
+
+function extractAggregateMergeSourceRefs(item: ItemDef): AggregateMergeSourceRef[] {
+  const raw = item.extensions?.jeiweb?.meta?.aggregateHoverSources;
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: AggregateMergeSourceRef[] = [];
+  raw.forEach((entry) => {
+    if (!isRecordLike(entry)) return;
+    const sourcePackId =
+      typeof entry.sourcePackId === 'string' && entry.sourcePackId.trim()
+        ? entry.sourcePackId.trim()
+        : '';
+    const id = typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : '';
+    if (!sourcePackId || !id) return;
+    const key = `${sourcePackId}\u0000${id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const rarity = (() => {
+      if (!isRecordLike(entry.rarity)) return undefined;
+      if (typeof entry.rarity.stars !== 'number' || !Number.isFinite(entry.rarity.stars)) {
+        return undefined;
+      }
+      return cloneJsonValue({
+        stars: entry.rarity.stars,
+        ...(typeof entry.rarity.label === 'string' ? { label: entry.rarity.label } : {}),
+        ...(typeof entry.rarity.color === 'string' ? { color: entry.rarity.color } : {}),
+        ...(typeof entry.rarity.token === 'string' ? { token: entry.rarity.token } : {}),
+        ...(typeof entry.rarity.tagId === 'string' ? { tagId: entry.rarity.tagId } : {}),
+      });
+    })();
+    out.push({
+      sourcePackId,
+      id,
+      ...(typeof entry.name === 'string' && entry.name ? { name: entry.name } : {}),
+      ...(Array.isArray(entry.tags)
+        ? {
+            tags: entry.tags.filter((tag): tag is string => typeof tag === 'string'),
+          }
+        : {}),
+      ...(typeof entry.source === 'string' && entry.source ? { source: entry.source } : {}),
+      ...(rarity ? { rarity } : {}),
+      ...(isRecordLike(entry.meta) ? { meta: cloneJsonValue(entry.meta) } : {}),
+    });
+  });
+  return out;
+}
+
+function matchAggregateSourceItem(
+  sourcePack: PackData,
+  sourceItemId: string,
+  canonicalKey: ItemKey,
+): { item: ItemDef | null; candidateCount: number } {
+  const candidates = sourcePack.items.filter((item) => item.key.id === sourceItemId);
+  if (candidates.length === 0) return { item: null, candidateCount: 0 };
+  const canonicalNbt = stableJsonStringify(canonicalKey.nbt ?? null);
+  const exact = candidates.filter(
+    (item) =>
+      item.key.meta === canonicalKey.meta &&
+      stableJsonStringify(item.key.nbt ?? null) === canonicalNbt,
+  );
+  if (exact.length > 0) {
+    return {
+      item: exact[0] ?? null,
+      candidateCount: exact.length,
+    };
+  }
+  return {
+    item: candidates[0] ?? null,
+    candidateCount: candidates.length,
+  };
+}
+
+function buildAggregateFallbackSourceSnapshot(
+  sourceRef: AggregateMergeSourceRef,
+  canonicalKey: ItemKey,
+  tagIds: string[],
+): AggregateMergeSourceSnapshot {
+  const jeiwebMeta = stripAggregateMeta(sourceRef.meta);
+  const key: ItemKey = {
+    id: sourceRef.id,
+    ...(canonicalKey.meta !== undefined ? { meta: cloneJsonValue(canonicalKey.meta) } : {}),
+    ...(canonicalKey.nbt !== undefined ? { nbt: cloneJsonValue(canonicalKey.nbt) } : {}),
+  };
+  return {
+    sourcePackId: sourceRef.sourcePackId,
+    sourceItemId: sourceRef.id,
+    lookup: 'fallback',
+    candidateCount: 0,
+    key,
+    name: sourceRef.name ?? sourceRef.id,
+    tags: [...(sourceRef.tags ?? [])],
+    tagIds: [...tagIds],
+    ...(sourceRef.source ? { source: sourceRef.source } : {}),
+    ...(sourceRef.rarity ? { rarity: cloneJsonValue(sourceRef.rarity) } : {}),
+    ...(jeiwebMeta ? { jeiwebMeta } : {}),
+  };
+}
+
+function downloadTextFile(text: string, filename: string) {
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function timestampForFilename(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    '-',
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join('');
+}
+
+async function buildAggregateMergeReport(): Promise<AggregateMergeReport> {
+  const currentPack = pack.value;
+  if (!currentPack) {
+    throw new Error('当前没有已加载的数据包');
+  }
+
+  const sourcePackIds = getAggregateSourcePackIds(currentPack.manifest.packId);
+  if (sourcePackIds.length === 0) {
+    throw new Error('当前数据包不是聚合包');
+  }
+
+  const loadedSources = await Promise.all(
+    sourcePackIds.map(async (sourcePackId) => {
+      const loaded = await loadRuntimePack(sourcePackId);
+      return [sourcePackId, loaded.pack] as const;
+    }),
+  );
+  const sourcePackById = new Map<string, PackData>(loadedSources);
+  const sourceTagIdsByPackId = new Map(
+    loadedSources.map(([sourcePackId, sourcePack]) => [
+      sourcePackId,
+      buildTagIndex(sourcePack).tagIdsByItemId,
+    ]),
+  );
+  const currentTagIdsByItemId = index.value?.tagIdsByItemId ?? buildTagIndex(currentPack).tagIdsByItemId;
+
+  const groups = currentPack.items
+    .map((item): AggregateMergeReportEntry | null => {
+      const sourceRefs = extractAggregateMergeSourceRefs(item);
+      if (sourceRefs.length <= 1) return null;
+
+      const sources = sourceRefs
+        .map((sourceRef): AggregateMergeSourceSnapshot => {
+          const sourcePack = sourcePackById.get(sourceRef.sourcePackId);
+          const sourceTagIdsByItemId = sourceTagIdsByPackId.get(sourceRef.sourcePackId);
+          const fallbackTagIds = sourceTagIdsByItemId
+            ? getSortedTagIds(sourceTagIdsByItemId, sourceRef.id)
+            : [];
+          if (!sourcePack || !sourceTagIdsByItemId) {
+            return buildAggregateFallbackSourceSnapshot(sourceRef, item.key, fallbackTagIds);
+          }
+
+          const matched = matchAggregateSourceItem(sourcePack, sourceRef.id, item.key);
+          if (!matched.item) {
+            return buildAggregateFallbackSourceSnapshot(sourceRef, item.key, fallbackTagIds);
+          }
+
+          return {
+            sourcePackId: sourceRef.sourcePackId,
+            sourceItemId: sourceRef.id,
+            lookup: 'matched',
+            candidateCount: matched.candidateCount,
+            ...buildAggregateMergeItemSnapshot(
+              matched.item,
+              getSortedTagIds(sourceTagIdsByItemId, matched.item.key.id),
+            ),
+          };
+        })
+        .sort(
+          (left, right) =>
+            left.sourcePackId.localeCompare(right.sourcePackId) ||
+            left.sourceItemId.localeCompare(right.sourceItemId),
+        );
+
+      return {
+        canonical: buildAggregateMergeItemSnapshot(
+          item,
+          getSortedTagIds(currentTagIdsByItemId, item.key.id),
+        ),
+        sourceCount: sources.length,
+        sources,
+      };
+    })
+    .filter((entry): entry is AggregateMergeReportEntry => entry !== null)
+    .sort(
+      (left, right) =>
+        left.canonical.name.localeCompare(right.canonical.name, 'zh-CN') ||
+        left.canonical.key.id.localeCompare(right.canonical.key.id),
+    );
+
+  const mergedSourceKeys = new Set(
+    groups.flatMap((group) =>
+      group.sources.map((source) => `${source.sourcePackId}\u0000${source.sourceItemId}`),
+    ),
+  );
+
+  const unmergedBuckets = new Map<string, AggregateUnmergedCandidateItem[]>();
+  loadedSources.forEach(([sourcePackId, sourcePack]) => {
+    const tagIdsByItemId = sourceTagIdsByPackId.get(sourcePackId);
+    if (!tagIdsByItemId) return;
+    sourcePack.items.forEach((item) => {
+      const nameKey = normalizeAggregateExportItemName(item.name ?? '');
+      if (!nameKey) return;
+      const bucket = unmergedBuckets.get(nameKey) ?? [];
+      bucket.push({
+        sourcePackId,
+        sourceItemId: item.key.id,
+        lookup: 'matched',
+        candidateCount: 1,
+        merged: mergedSourceKeys.has(`${sourcePackId}\u0000${item.key.id}`),
+        ...buildAggregateMergeItemSnapshot(item, getSortedTagIds(tagIdsByItemId, item.key.id)),
+      });
+      unmergedBuckets.set(nameKey, bucket);
+    });
+  });
+
+  const unmergedGroups = Array.from(unmergedBuckets.entries())
+    .map(([nameKey, items]): AggregateUnmergedCandidateGroup | null => {
+      const sourcePackIds = Array.from(new Set(items.map((item) => item.sourcePackId))).sort();
+      if (sourcePackIds.length < 2) return null;
+      const unmergedItems = items.filter((item) => !item.merged);
+      if (unmergedItems.length === 0) return null;
+      return {
+        nameKey,
+        displayNames: Array.from(new Set(items.map((item) => item.name))).sort((a, b) =>
+          a.localeCompare(b, 'zh-CN'),
+        ),
+        sourcePackIds,
+        totalItemCount: items.length,
+        unmergedItemCount: unmergedItems.length,
+        items: items.sort(
+          (left, right) =>
+            Number(left.merged) - Number(right.merged) ||
+            left.sourcePackId.localeCompare(right.sourcePackId) ||
+            left.sourceItemId.localeCompare(right.sourceItemId),
+        ),
+      };
+    })
+    .filter((entry): entry is AggregateUnmergedCandidateGroup => entry !== null)
+    .sort(
+      (left, right) =>
+        right.unmergedItemCount - left.unmergedItemCount ||
+        left.displayNames[0]?.localeCompare(right.displayNames[0] ?? '', 'zh-CN') ||
+        left.nameKey.localeCompare(right.nameKey),
+    );
+
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    packId: currentPack.manifest.packId,
+    packDisplayName: currentPack.manifest.displayName,
+    sourcePackIds,
+    mergedItemCount: groups.length,
+    groups,
+    unmergedCandidateCount: unmergedGroups.length,
+    unmergedGroups,
+  };
+}
+
+async function exportAggregateMergeReport(mode: 'copy' | 'download'): Promise<void> {
+  if (aggregateMergeReportLoading.value) return;
+  aggregateMergeReportLoading.value = true;
+  try {
+    const report = await buildAggregateMergeReport();
+    const text = JSON.stringify(report, null, 2);
+    if (mode === 'copy') {
+      await copyText(text);
+      $q.notify({
+        type: 'positive',
+        message: `已复制聚合分析 JSON：已合并 ${report.mergedItemCount} 组，未合并候选 ${report.unmergedCandidateCount} 组`,
+      });
+      return;
+    }
+
+    const filename = `${report.packId}-aggregate-merge-report-${timestampForFilename()}.json`;
+    downloadTextFile(text, filename);
+    $q.notify({
+      type: 'positive',
+      message: `已导出聚合分析 JSON：已合并 ${report.mergedItemCount} 组，未合并候选 ${report.unmergedCandidateCount} 组`,
+    });
+  } catch (err) {
+    $q.notify({
+      type: 'negative',
+      message: err instanceof Error ? err.message : '导出聚合合并分析失败',
+    });
+  } finally {
+    aggregateMergeReportLoading.value = false;
+  }
+}
+
+async function onCopyAggregateMergeReport(): Promise<void> {
+  await exportAggregateMergeReport('copy');
+}
+
+async function onDownloadAggregateMergeReport(): Promise<void> {
+  await exportAggregateMergeReport('download');
 }
 
 function openPlannerPayload(payload: PlannerSavePayload, loadKey = `share:${Date.now()}`): void {
