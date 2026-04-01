@@ -13,13 +13,7 @@
         <q-tab-panels v-model="activeTab" animated>
           <q-tab-panel name="overview" class="ww__operator-panel">
             <div v-if="operatorTocEntries.length" class="ww__toc-float">
-              <q-btn
-                round
-                dense
-                color="primary"
-                icon="menu_book"
-                class="ww__toc-button"
-              >
+              <q-btn round dense color="primary" icon="menu_book" class="ww__toc-button">
                 <q-tooltip>{{ t('warfarin.common.tableOfContents') }}</q-tooltip>
                 <q-menu
                   v-model="tocMenuOpen"
@@ -135,7 +129,12 @@ import WLoreRenderer from './WLoreRenderer.vue';
 import WTutorialRenderer from './WTutorialRenderer.vue';
 import WDocumentRenderer from './WDocumentRenderer.vue';
 import WGenericRenderer from './WGenericRenderer.vue';
-import { type RecordLike, type WarfarinEndpointType, isRecordLike, normalizePayload } from './utils';
+import {
+  type RecordLike,
+  type WarfarinEndpointType,
+  isRecordLike,
+  normalizePayload,
+} from './utils';
 import { localizeWarfarinIdentifier } from './displayLabels';
 
 const props = defineProps<{
@@ -154,7 +153,11 @@ const hydratedSource = ref<unknown>(props.source);
 function resolveRawRoot(source: unknown): RecordLike | null {
   if (!isRecordLike(source)) return null;
   if (isRecordLike(source.list) && isRecordLike(source.detail)) return source;
-  if (isRecordLike(source.raw) && isRecordLike(source.raw.list) && isRecordLike(source.raw.detail)) {
+  if (
+    isRecordLike(source.raw) &&
+    isRecordLike(source.raw.list) &&
+    isRecordLike(source.raw.detail)
+  ) {
     return source.raw;
   }
   return null;
@@ -256,15 +259,31 @@ const operatorTocEntries = computed(() => {
     if (enabled) out.push({ id, label });
   };
   push(true, 'operator-overview', t('warfarin.operator.overview'));
-  push(Array.isArray(characterTable.attributes), 'operator-attributes', t('warfarin.operator.attributes'));
+  push(
+    Array.isArray(characterTable.attributes),
+    'operator-attributes',
+    t('warfarin.operator.attributes'),
+  );
   push(!!growthTable.charBreakCostMap, 'operator-promotions', t('warfarin.operator.promotions'));
   push(!!growthTable.talentNodeMap, 'operator-talents', t('warfarin.operator.talents'));
-  push(!!potentialTable.potentialUnlockBundle, 'operator-potentials', t('warfarin.operator.potentials'));
+  push(
+    !!potentialTable.potentialUnlockBundle,
+    'operator-potentials',
+    t('warfarin.operator.potentials'),
+  );
   push(!!detail.skillPatchTable, 'operator-combat-skills', t('warfarin.operator.combatSkills'));
   push(!!detail.spaceshipSkillTable, 'operator-base-skills', t('warfarin.operator.baseSkills'));
   push(!!detail.snapshots, 'operator-artworks', t('warfarin.operator.artworks'));
-  push(Array.isArray(characterTable.profileRecord), 'operator-files', t('warfarin.operator.operatorFiles'));
-  push(Array.isArray(characterTable.profileVoice), 'operator-audio-log', t('warfarin.operator.audioLog'));
+  push(
+    Array.isArray(characterTable.profileRecord),
+    'operator-files',
+    t('warfarin.operator.operatorFiles'),
+  );
+  push(
+    Array.isArray(characterTable.profileVoice),
+    'operator-audio-log',
+    t('warfarin.operator.audioLog'),
+  );
   return out;
 });
 
@@ -291,7 +310,11 @@ function handleOperatorTocClick(sectionId: string): void {
 }
 
 function syncOperatorSectionFromHash(behavior: ScrollBehavior = 'auto'): void {
-  if (typeof window === 'undefined' || endpoint.value !== 'operators' || activeTab.value !== 'overview') {
+  if (
+    typeof window === 'undefined' ||
+    endpoint.value !== 'operators' ||
+    activeTab.value !== 'overview'
+  ) {
     return;
   }
   const rawHash = window.location.hash.replace(/^#/, '').trim();
