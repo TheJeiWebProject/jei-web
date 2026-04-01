@@ -45,7 +45,7 @@
         <q-separator vertical />
 
         <div class="settings-content">
-          <q-scroll-area class="settings-scroll">
+          <div class="settings-scroll">
             <div class="q-pa-md q-gutter-y-md">
               <q-card v-if="showSection('plugins')" flat bordered>
                 <q-card-section class="q-pb-sm">
@@ -910,7 +910,7 @@
                 />
               </div>
             </div>
-          </q-scroll-area>
+          </div>
         </div>
       </div>
 
@@ -1338,25 +1338,34 @@ function formatLatency(latencyMs: number | null): string {
 .settings-shell {
   width: min(1120px, 96vw);
   max-width: 96vw;
-  min-height: 76vh;
+  height: 80vh;
+  height: 80dvh;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-layout {
   display: grid;
-  grid-template-columns: 220px 1px 1fr;
-  min-height: 60vh;
+  grid-template-columns: 220px 1px minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .settings-nav {
   background: rgba(127, 127, 127, 0.05);
+  overflow: auto;
 }
 
 .settings-content {
   min-width: 0;
+  min-height: 0;
 }
 
 .settings-scroll {
-  height: 60vh;
+  height: 100%;
+  overflow: auto;
 }
 
 .hover-preview-grid {
