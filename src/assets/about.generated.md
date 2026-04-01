@@ -1,16 +1,52 @@
 # About
 
 ## Build
-- Version: 17561c5-dirty
-- Commit: 17561c5 (17561c504e3bb14abd92793381efbf767483a2bf)
-- Commit count: 146
-- Subject: feat: 更新单位处理逻辑，统一使用 PlannerTargetUnit 类型
+- Version: 1d6581e-dirty
+- Commit: 1d6581e (1d6581e692f8fb2bc3705583cc051f80550414aa)
+- Commit count: 151
+- Subject: feat: 增强悬浮提示功能，添加可配置的显示选项和预览功能
 - Author: AndreaFrederica
-- Date: 2026-03-31T22:48:36+08:00
-- Generated at: 2026-03-31T19:18:42.952Z
+- Date: 2026-04-01T17:54:48+08:00
+- Generated at: 2026-04-01T11:29:53.625Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r151 (2026-04-01T17:54:48+08:00)
+- 1d6581e
+  feat: 增强悬浮提示功能，添加可配置的显示选项和预览功能
+
+### r150 (2026-04-01T05:25:43+08:00)
+- 82ae7d2
+  feat: add AEF aggregation logic and enhance wiki components
+  
+  - Implemented `aggregateAefPack` function to aggregate items from AEF and AEF-Skland packs based on unique names.
+  - Enhanced `WikiDocument.vue` to conditionally hide leading horizontal rules based on a new prop.
+  - Introduced `LinkInline.vue` component for rendering inline links in wiki documents.
+  - Updated `WikiInlineElement.vue` to support rendering of link elements.
+  - Improved `EntryInline.vue` with dark mode support and styling adjustments.
+  - Modified `WikiWidgetCommon.vue` to handle display titles and conditional rendering of document components.
+  - Added aggregate merge report functionality in `IndexPage.vue` with copy and download options.
+  - Updated `SettingsDialog.vue` to include buttons for exporting aggregate merge analysis.
+  - Extended `InlineElement` type in `wiki.ts` to include `LinkInline` type for better type safety.
+
+### r149 (2026-04-01T04:34:42+08:00)
+- 27987df
+  feat: 优化 WItemCostGrid 组件，调整成本显示样式并增强 StackView 组件的工具提示功能
+
+### r148 (2026-04-01T04:22:36+08:00)
+- c505292
+  feat: 添加 itemDefsByKeyHash 属性到 WItemCostGrid 组件，增强物品成本显示
+
+### r147 (2026-04-01T04:09:46+08:00)
+- 2c9d209
+  feat: add hover tooltip interaction settings and keybinding
+  
+  - Introduced a new setting to allow mouse enter for hover tooltips in the settings dialog.
+  - Added a keybinding for interacting with hover tooltips, including handling keydown and keyup events.
+  - Updated relevant components to support the new hover tooltip interaction feature.
+  - Refactored item search logic to accommodate changes in item ID handling.
+  - Enhanced settings store to manage new hover tooltip settings and their persistence.
 
 ### r146 (2026-03-31T22:48:36+08:00)
 - 17561c5
