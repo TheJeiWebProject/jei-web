@@ -15,13 +15,20 @@
   >
     <div class="stack-view__main">
       <q-img
-        v-if="showIconSrc"
+        v-if="iconLoadingAnimation && showIconSrc"
         :src="iconSrc"
         :ratio="1"
         fit="contain"
         loading="lazy"
         decoding="async"
         fetchpriority="low"
+        class="stack-view__icon"
+      />
+      <img
+        v-else-if="!iconLoadingAnimation && showIconSrc"
+        :src="iconSrc"
+        loading="lazy"
+        decoding="async"
         class="stack-view__icon"
       />
       <div
@@ -126,6 +133,8 @@ const props = withDefaults(
 );
 const settingsStore = useSettingsStore();
 
+const iconLoadingAnimation = computed(() => settingsStore.itemIconLoadingAnimation);
+
 const emit = defineEmits<{
   (e: 'item-click', itemKey: ItemKey): void;
   (e: 'item-mouseenter', keyHash: string): void;
@@ -208,10 +217,11 @@ const showIconSprite = computed(
 );
 const showIconPlaceholder = computed(
   () =>
-    (props.lazyVisual && hasImageVisual.value && !shouldRenderVisual.value) ||
-    (shouldRenderVisual.value &&
-      ((!!iconSrcRaw.value && !iconSrc.value) ||
-        (!!iconSprite.value && !iconSpriteUrl.value && isProxyImageUrl(iconSprite.value.url)))),
+    iconLoadingAnimation.value &&
+    ((props.lazyVisual && hasImageVisual.value && !shouldRenderVisual.value) ||
+      (shouldRenderVisual.value &&
+        ((!!iconSrcRaw.value && !iconSrc.value) ||
+          (!!iconSprite.value && !iconSpriteUrl.value && isProxyImageUrl(iconSprite.value.url))))),
 );
 
 let visibilityObserver: IntersectionObserver | null = null;
@@ -335,9 +345,7 @@ const subtitle = computed(() => {
   return amountText;
 });
 
-const effectiveShowName = computed(
-  () => props.iconDisplayMode !== 'jei_classic' && props.showName,
-);
+const effectiveShowName = computed(() => props.iconDisplayMode !== 'jei_classic' && props.showName);
 
 const effectiveShowSubtitle = computed(
   () => props.iconDisplayMode !== 'jei_classic' && props.showSubtitle,
@@ -354,8 +362,7 @@ const fallbackIcon = computed(() => {
 });
 
 const tooltipMouseInteractive = computed(
-  () =>
-    settingsStore.hoverTooltipAllowMouseEnter || settingsStore.hoverTooltipTemporaryInteractive,
+  () => settingsStore.hoverTooltipAllowMouseEnter || settingsStore.hoverTooltipTemporaryInteractive,
 );
 const tooltipPopupClass = computed(() => [
   'stack-tooltip-popup',
@@ -467,11 +474,7 @@ function formatTooltipMetaScalar(value: unknown): string {
   return '';
 }
 
-function collectTooltipMetaLines(
-  value: unknown,
-  prefix = '',
-  depth = 0,
-): string[] {
+function collectTooltipMetaLines(value: unknown, prefix = '', depth = 0): string[] {
   if (!isRecordLike(value) || depth > 2) return [];
   const out: string[] = [];
   const hiddenKeys = new Set([
@@ -563,12 +566,8 @@ function buildTooltipDetailEntry(
             },
           }
         : {}),
-      sourceLine:
-        typeof entry.source === 'string' && entry.source ? entry.source : '',
-      namespace:
-        typeof entry.namespace === 'string' && entry.namespace
-          ? entry.namespace
-          : '',
+      sourceLine: typeof entry.source === 'string' && entry.source ? entry.source : '',
+      namespace: typeof entry.namespace === 'string' && entry.namespace ? entry.namespace : '',
       description: typeof entry.description === 'string' ? entry.description : '',
       metaLines: collectTooltipMetaLines(entry.meta),
       wikiMetaLines: collectTooltipMetaLines(entry.wikiMeta),
@@ -603,7 +602,9 @@ function buildTooltipFallbackEntry(item: ItemDef): TooltipDetailEntry {
 const tooltipDetailEntries = computed<TooltipDetailEntry[]>(() => {
   const raw = itemDef.value?.extensions?.jeiweb?.meta?.aggregateHoverSources;
   if (Array.isArray(raw)) {
-    return raw.flatMap((entry, index) => (isRecordLike(entry) ? buildTooltipDetailEntry(entry, index) : []));
+    return raw.flatMap((entry, index) =>
+      isRecordLike(entry) ? buildTooltipDetailEntry(entry, index) : [],
+    );
   }
   return itemDef.value ? [buildTooltipFallbackEntry(itemDef.value)] : [];
 });
@@ -659,9 +660,7 @@ const tooltipDetailGroups = computed<TooltipAggregateGroup[]>(() => {
   const sourcePaths = entries
     .filter((entry) => entry.sourceLine.length > 0)
     .map((entry) =>
-      entries.length > 1
-        ? `${entry.title}: ${entry.sourceLine}`
-        : entry.sourceLine,
+      entries.length > 1 ? `${entry.title}: ${entry.sourceLine}` : entry.sourceLine,
     );
   if (sourcePaths.length) groups.push({ key: 'paths', title: 'Sources', lines: sourcePaths });
 
@@ -699,8 +698,7 @@ const tooltipRarityEntries = computed(() => {
       return;
     }
     const existingHasColor = typeof existing.color === 'string' && existing.color.length > 0;
-    const nextHasColor =
-      typeof nextEntry.color === 'string' && nextEntry.color.length > 0;
+    const nextHasColor = typeof nextEntry.color === 'string' && nextEntry.color.length > 0;
     if (!existingHasColor && nextHasColor) {
       byStars.set(stars, nextEntry);
     }
@@ -714,10 +712,7 @@ function normalizeTooltipDescription(value: string): string {
 
 const tooltipDetailDescriptions = computed<TooltipAggregateDescriptionEntry[]>(() => {
   const hasMultipleSources = tooltipDetailEntries.value.length > 1;
-  const byDescription = new Map<
-    string,
-    { description: string; sourceTitles: Set<string> }
-  >();
+  const byDescription = new Map<string, { description: string; sourceTitles: Set<string> }>();
   tooltipDetailEntries.value.forEach((entry) => {
     const description = entry.description.trim();
     if (!description) return;
@@ -742,10 +737,7 @@ const tooltipDetailDescriptions = computed<TooltipAggregateDescriptionEntry[]>((
       const sourceLabel = Array.from(entry.sourceTitles).join(' / ');
       return {
         key: normalized,
-        title:
-          hasMultipleSources && sourceLabel
-            ? `Description (${sourceLabel})`
-            : 'Description',
+        title: hasMultipleSources && sourceLabel ? `Description (${sourceLabel})` : 'Description',
         description: entry.description,
       };
     })
@@ -827,17 +819,17 @@ const tooltipEnabled = computed(() => {
   if (!stack.value) return false;
   return Boolean(
     visibleTooltipTitle.value ||
-      visibleTooltipIdLine.value ||
-      visibleTooltipMetaLine.value ||
-      visibleTooltipNbtLine.value ||
-      visibleTooltipRarityEntries.value.length ||
-      visibleTooltipDetailGroups.value.length ||
-      visibleTooltipDetailDescriptions.value.length ||
-      visibleTooltipNamespaceLines.value.length ||
-      visibleTooltipTagsLine.value ||
-      visibleTooltipSourceLine.value ||
-      visibleTooltipDescription.value ||
-      visibleTooltipNamespace.value,
+    visibleTooltipIdLine.value ||
+    visibleTooltipMetaLine.value ||
+    visibleTooltipNbtLine.value ||
+    visibleTooltipRarityEntries.value.length ||
+    visibleTooltipDetailGroups.value.length ||
+    visibleTooltipDetailDescriptions.value.length ||
+    visibleTooltipNamespaceLines.value.length ||
+    visibleTooltipTagsLine.value ||
+    visibleTooltipSourceLine.value ||
+    visibleTooltipDescription.value ||
+    visibleTooltipNamespace.value,
   );
 });
 

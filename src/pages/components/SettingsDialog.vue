@@ -250,6 +250,27 @@
                         $emit('update:recipe-view-mode', $event as 'dialog' | 'panel')
                       "
                     />
+                    <q-select
+                      dense
+                      outlined
+                      emit-value
+                      map-options
+                      :label="t('itemClickDefaultTab')"
+                      :options="[
+                        { label: t('tabsRecipes'), value: 'recipes' },
+                        { label: t('tabsUses'), value: 'uses' },
+                        { label: t('tabsWiki'), value: 'wiki' },
+                        { label: t('tabsIcon'), value: 'icon' },
+                        { label: t('tabsPlanner'), value: 'planner' },
+                      ]"
+                      :model-value="itemClickDefaultTab"
+                      @update:model-value="
+                        $emit(
+                          'update:item-click-default-tab',
+                          ($event as 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner') ?? 'recipes',
+                        )
+                      "
+                    />
                     <q-toggle
                       :label="t('recipeSlotShowName')"
                       :model-value="recipeSlotShowName"
@@ -606,6 +627,11 @@
                         )
                       "
                     />
+                    <q-toggle
+                      :label="t('itemIconLoadingAnimation')"
+                      :model-value="itemIconLoadingAnimation"
+                      @update:model-value="$emit('update:item-icon-loading-animation', !!$event)"
+                    />
                   </div>
                 </q-card-section>
               </q-card>
@@ -933,6 +959,7 @@ import type {
   DarkMode,
   HoverTooltipDisplayKey,
   HoverTooltipDisplaySettings,
+  ItemClickDefaultTab,
   ItemIconDisplayMode,
   Language,
 } from 'src/stores/settings';
@@ -1003,6 +1030,8 @@ const props = defineProps<{
   quantFlowRenderer: 'nodes' | 'sankey';
   itemListIconDisplayMode: ItemIconDisplayMode;
   favoritesIconDisplayMode: ItemIconDisplayMode;
+  itemIconLoadingAnimation: boolean;
+  itemClickDefaultTab: ItemClickDefaultTab;
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
   favoritesOpensNewStack: boolean;
@@ -1085,7 +1114,9 @@ const emit = defineEmits<{
   'update:quant-flow-renderer': [value: 'nodes' | 'sankey'];
   'update:item-list-icon-display-mode': [value: ItemIconDisplayMode];
   'update:favorites-icon-display-mode': [value: ItemIconDisplayMode];
+  'update:item-icon-loading-animation': [value: boolean];
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
+  'update:item-click-default-tab': [value: ItemClickDefaultTab];
   'update:recipe-slot-show-name': [value: boolean];
   'update:favorites-open-stack': [value: boolean];
   'update:persist-history-records': [value: boolean];

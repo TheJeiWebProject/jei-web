@@ -533,6 +533,8 @@ export default {
   favoritesIconDisplayMode: '收藏夹图标模式',
   iconDisplayModeModern: 'Modern',
   iconDisplayModeJeiClassic: 'JEI Classic',
+  itemIconLoadingAnimation: '物品图标加载动画',
+  itemClickDefaultTab: '点击物品默认打开',
   importShareLinkOrJson: '导入分享链接或 JSON',
   officialQQGroup: '官方QQ群：{groupId}',
   friendLinks: '友情链接',

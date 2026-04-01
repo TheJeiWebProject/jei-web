@@ -535,6 +535,8 @@ export default {
   favoritesIconDisplayMode: 'お気に入りアイコンモード',
   iconDisplayModeModern: 'Modern',
   iconDisplayModeJeiClassic: 'JEI Classic',
+  itemIconLoadingAnimation: 'アイテムアイコン読み込みアニメーション',
+  itemClickDefaultTab: 'アイテムクリック時のデフォルトタブ',
   importShareLinkOrJson: '共有リンクまたはJSONをインポート',
   officialQQGroup: '公式QQグループ：{groupId}',
   friendLinks: 'フレンドリンク',

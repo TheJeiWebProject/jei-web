@@ -214,8 +214,12 @@
       @update:item-list-icon-display-mode="settingsStore.setItemListIconDisplayMode($event)"
       :favorites-icon-display-mode="settingsStore.favoritesIconDisplayMode"
       @update:favorites-icon-display-mode="settingsStore.setFavoritesIconDisplayMode($event)"
+      :item-icon-loading-animation="settingsStore.itemIconLoadingAnimation"
+      @update:item-icon-loading-animation="settingsStore.setItemIconLoadingAnimation($event)"
       :recipe-view-mode="settingsStore.recipeViewMode"
       @update:recipe-view-mode="settingsStore.setRecipeViewMode($event)"
+      :item-click-default-tab="settingsStore.itemClickDefaultTab"
+      @update:item-click-default-tab="settingsStore.setItemClickDefaultTab($event)"
       :recipe-slot-show-name="settingsStore.recipeSlotShowName"
       @update:recipe-slot-show-name="settingsStore.setRecipeSlotShowName($event)"
       :favorites-opens-new-stack="settingsStore.favoritesOpensNewStack"
@@ -224,9 +228,7 @@
       @update:persist-history-records="settingsStore.setPersistHistoryRecords($event)"
       :hover-tooltip-allow-mouse-enter="settingsStore.hoverTooltipAllowMouseEnter"
       :hover-tooltip-display="settingsStore.hoverTooltipDisplay"
-      @update:hover-tooltip-allow-mouse-enter="
-        settingsStore.setHoverTooltipAllowMouseEnter($event)
-      "
+      @update:hover-tooltip-allow-mouse-enter="settingsStore.setHoverTooltipAllowMouseEnter($event)"
       @update:hover-tooltip-display-setting="onUpdateHoverTooltipDisplaySetting"
       :detect-pc-disable-mobile="settingsStore.detectPcDisableMobile"
       @update:detect-pc-disable-mobile="settingsStore.setDetectPcDisableMobile($event)"
@@ -1449,13 +1451,18 @@ const searchableItemsForFilter = computed<SearchableItemEntry[]>(() => {
   const out: SearchableItemEntry[] = [];
   for (const [keyHash, def] of sortedEntries) {
     const idTermsLower = Array.from(
-      new Set(getItemLookupIds(def).map((id) => id.toLowerCase()).filter(Boolean)),
+      new Set(
+        getItemLookupIds(def)
+          .map((id) => id.toLowerCase())
+          .filter(Boolean),
+      ),
     );
     const gameIdTermsLower = Array.from(
       new Set(
         idTermsLower
-          .map((idLower) =>
-            (idLower.includes(':') ? idLower.split(':')[0] : idLower.split('.')[0]) ?? '',
+          .map(
+            (idLower) =>
+              (idLower.includes(':') ? idLower.split(':')[0] : idLower.split('.')[0]) ?? '',
           )
           .filter(Boolean),
       ),
@@ -1773,7 +1780,10 @@ function normalizeAggregateExportItemName(name: string): string {
   return name.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function buildAggregateMergeItemSnapshot(item: ItemDef, tagIds: string[]): AggregateMergeItemSnapshot {
+function buildAggregateMergeItemSnapshot(
+  item: ItemDef,
+  tagIds: string[],
+): AggregateMergeItemSnapshot {
   const jeiwebMeta = stripAggregateMeta(item.extensions?.jeiweb?.meta);
   return {
     key: cloneJsonValue(item.key),
@@ -1931,7 +1941,8 @@ async function buildAggregateMergeReport(): Promise<AggregateMergeReport> {
       buildTagIndex(sourcePack).tagIdsByItemId,
     ]),
   );
-  const currentTagIdsByItemId = index.value?.tagIdsByItemId ?? buildTagIndex(currentPack).tagIdsByItemId;
+  const currentTagIdsByItemId =
+    index.value?.tagIdsByItemId ?? buildTagIndex(currentPack).tagIdsByItemId;
 
   const groups = currentPack.items
     .map((item): AggregateMergeReportEntry | null => {
@@ -3336,8 +3347,9 @@ function ensurePlannerAutoForCurrentItem() {
 
 function openDialogByKeyHash(
   keyHash: string,
-  tab: 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner' = 'recipes',
+  tab?: 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner',
 ) {
+  const actualTab = tab ?? settingsStore.itemClickDefaultTab;
   const def = index.value?.itemsByKeyHash.get(keyHash);
   if (!def) return;
 
@@ -3348,18 +3360,17 @@ function openDialogByKeyHash(
 
   selectedKeyHash.value = keyHash;
   navStack.value = [def.key];
-  activeTab.value = tab;
-  plannerInitialState.value = tab === 'planner' ? buildAutoPlannerInitialState(def.key) : null;
-  if (tab !== 'planner') plannerTab.value = 'tree';
+  activeTab.value = actualTab;
+  plannerInitialState.value =
+    actualTab === 'planner' ? buildAutoPlannerInitialState(def.key) : null;
+  if (actualTab !== 'planner') plannerTab.value = 'tree';
   dialogOpen.value = settingsStore.recipeViewMode === 'dialog';
   pushHistoryKeyHash(keyHash);
   void syncUrl('push');
 }
 
-function openDialogByItemKey(
-  key: ItemKey,
-  tab: 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner' = 'recipes',
-) {
+function openDialogByItemKey(key: ItemKey, tab?: 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner') {
+  const actualTab = tab ?? settingsStore.itemClickDefaultTab;
   // 如果当前不在资料查看器，切换到资料查看器
   if (centerTab.value !== 'recipe') {
     centerTab.value = 'recipe';
@@ -3368,39 +3379,38 @@ function openDialogByItemKey(
   // 防止重复压栈
   const last = navStack.value[navStack.value.length - 1];
   if (last && itemKeyHash(last) === itemKeyHash(key)) {
-    activeTab.value = tab;
-    if (tab === 'planner' && !plannerInitialState.value) {
+    activeTab.value = actualTab;
+    if (actualTab === 'planner' && !plannerInitialState.value) {
       plannerInitialState.value = buildAutoPlannerInitialState(key);
     }
     return;
   }
 
   navStack.value = [...navStack.value, key];
-  activeTab.value = tab;
-  plannerInitialState.value = tab === 'planner' ? buildAutoPlannerInitialState(key) : null;
-  if (tab !== 'planner') plannerTab.value = 'tree';
+  activeTab.value = actualTab;
+  plannerInitialState.value = actualTab === 'planner' ? buildAutoPlannerInitialState(key) : null;
+  if (actualTab !== 'planner') plannerTab.value = 'tree';
   pushHistoryKeyHash(itemKeyHash(key));
   void syncUrl('push');
 }
 
-function openStackDialog(
-  keyHash: string,
-  tab: 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner' = 'recipes',
-) {
+function openStackDialog(keyHash: string, tab?: 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner') {
+  const actualTab = tab ?? settingsStore.itemClickDefaultTab;
   const def = index.value?.itemsByKeyHash.get(keyHash);
   if (!def) return;
   if (dialogOpen.value || settingsStore.recipeViewMode === 'panel') {
-    openDialogByItemKey(def.key, tab);
+    openDialogByItemKey(def.key, actualTab);
   } else {
-    openDialogByKeyHash(keyHash, tab);
+    openDialogByKeyHash(keyHash, actualTab);
   }
 }
 
 function openDialogFromFavorites(keyHash: string) {
+  const tab = settingsStore.itemClickDefaultTab;
   if (settingsStore.favoritesOpensNewStack) {
-    openStackDialog(keyHash, 'recipes');
+    openStackDialog(keyHash, tab);
   } else {
-    openDialogByKeyHash(keyHash, 'recipes');
+    openDialogByKeyHash(keyHash, tab);
   }
 }
 

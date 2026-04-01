@@ -21,6 +21,7 @@ import {
 export type DarkMode = 'auto' | 'light' | 'dark';
 export type Language = 'zh-CN' | 'en-US' | 'ja-JP';
 export type ItemIconDisplayMode = 'modern' | 'jei_classic';
+export type ItemClickDefaultTab = 'recipes' | 'uses' | 'wiki' | 'icon' | 'planner';
 export type HoverTooltipDisplayKey =
   | 'title'
   | 'idLine'
@@ -111,6 +112,16 @@ function normalizeCustomPackId(rawId: string): string {
 
 function normalizeItemIconDisplayMode(value: unknown): ItemIconDisplayMode | null {
   return value === 'jei_classic' || value === 'modern' ? value : null;
+}
+
+function normalizeItemClickDefaultTab(value: unknown): ItemClickDefaultTab | null {
+  return value === 'recipes' ||
+    value === 'uses' ||
+    value === 'wiki' ||
+    value === 'icon' ||
+    value === 'planner'
+    ? value
+    : null;
 }
 
 function normalizeCustomPackSource(
@@ -255,6 +266,8 @@ export const useSettingsStore = defineStore('settings', {
       lineWidthCurveConfig: createDefaultLineWidthCurveConfig(),
       itemListIconDisplayMode: 'modern' as ItemIconDisplayMode,
       favoritesIconDisplayMode: 'modern' as ItemIconDisplayMode,
+      itemIconLoadingAnimation: false,
+      itemClickDefaultTab: 'recipes' as ItemClickDefaultTab,
       machineCountDecimals: 2,
       pluginEnabledById: {} as Record<string, boolean>,
       pluginSettingsById: {} as Record<string, Record<string, string | number | boolean>>,
@@ -493,6 +506,12 @@ export const useSettingsStore = defineStore('settings', {
         favoritesIconDisplayMode:
           normalizeItemIconDisplayMode(parsed.favoritesIconDisplayMode) ??
           defaults.favoritesIconDisplayMode,
+        itemIconLoadingAnimation:
+          typeof parsed.itemIconLoadingAnimation === 'boolean'
+            ? parsed.itemIconLoadingAnimation
+            : defaults.itemIconLoadingAnimation,
+        itemClickDefaultTab:
+          normalizeItemClickDefaultTab(parsed.itemClickDefaultTab) ?? defaults.itemClickDefaultTab,
         machineCountDecimals:
           typeof parsed.machineCountDecimals === 'number' &&
           Number.isFinite(parsed.machineCountDecimals) &&
@@ -787,6 +806,14 @@ export const useSettingsStore = defineStore('settings', {
       this.favoritesIconDisplayMode = value === 'jei_classic' ? 'jei_classic' : 'modern';
       void this.save();
     },
+    setItemIconLoadingAnimation(value: boolean) {
+      this.itemIconLoadingAnimation = value;
+      void this.save();
+    },
+    setItemClickDefaultTab(value: ItemClickDefaultTab) {
+      this.itemClickDefaultTab = normalizeItemClickDefaultTab(value) ?? 'recipes';
+      void this.save();
+    },
     setMachineCountDecimals(value: number) {
       const n = Number(value);
       if (!Number.isFinite(n) || n < 0) return;
@@ -861,6 +888,8 @@ export const useSettingsStore = defineStore('settings', {
         lineWidthCurveConfig: this.lineWidthCurveConfig,
         itemListIconDisplayMode: this.itemListIconDisplayMode,
         favoritesIconDisplayMode: this.favoritesIconDisplayMode,
+        itemIconLoadingAnimation: this.itemIconLoadingAnimation,
+        itemClickDefaultTab: this.itemClickDefaultTab,
         machineCountDecimals: this.machineCountDecimals,
         pluginEnabledById: this.pluginEnabledById,
         pluginSettingsById: this.pluginSettingsById,
@@ -1000,6 +1029,13 @@ export const useSettingsStore = defineStore('settings', {
       );
       if (favoritesIconDisplayMode) {
         this.favoritesIconDisplayMode = favoritesIconDisplayMode;
+      }
+      if (typeof parsed.itemIconLoadingAnimation === 'boolean') {
+        this.itemIconLoadingAnimation = parsed.itemIconLoadingAnimation;
+      }
+      const itemClickDefaultTab = normalizeItemClickDefaultTab(parsed.itemClickDefaultTab);
+      if (itemClickDefaultTab) {
+        this.itemClickDefaultTab = itemClickDefaultTab;
       }
       if (
         typeof parsed.machineCountDecimals === 'number' &&

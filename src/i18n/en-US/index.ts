@@ -83,7 +83,8 @@ export default {
   favoritesOpenStack: 'Favorites open new navigation stack',
   persistHistoryRecords: 'Persist history records',
   hoverTooltipAllowMouseEnter: 'Allow moving mouse into item hover tooltip',
-  hoverTooltipTemporaryShortcutHint: 'When disabled, hold {key} to temporarily make the hover interactive',
+  hoverTooltipTemporaryShortcutHint:
+    'When disabled, hold {key} to temporarily make the hover interactive',
   hoverTooltipInteractionGroup: 'Interaction',
   hoverTooltipContentGroup: 'Visible Content',
   hoverTooltipShowTitle: 'Show title',
@@ -534,6 +535,8 @@ export default {
   favoritesIconDisplayMode: 'Favorites Icon Mode',
   iconDisplayModeModern: 'Modern',
   iconDisplayModeJeiClassic: 'JEI Classic',
+  itemIconLoadingAnimation: 'Item Icon Loading Animation',
+  itemClickDefaultTab: 'Default Tab on Item Click',
   importShareLinkOrJson: 'Import Share Link or JSON',
   officialQQGroup: 'Official QQ Group: {groupId}',
   friendLinks: 'Friend Links',

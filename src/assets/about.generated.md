@@ -1,16 +1,32 @@
 # About
 
 ## Build
-- Version: 1d6581e-dirty
-- Commit: 1d6581e (1d6581e692f8fb2bc3705583cc051f80550414aa)
-- Commit count: 151
-- Subject: feat: 增强悬浮提示功能，添加可配置的显示选项和预览功能
+- Version: 6e5c050-dirty
+- Commit: 6e5c050 (6e5c05089a0e8aa2949ebf9d6186445c19fe27e8)
+- Commit count: 155
+- Subject: fix: 优化 SettingsDialog 组件中的文本格式和事件处理
 - Author: AndreaFrederica
-- Date: 2026-04-01T17:54:48+08:00
-- Generated at: 2026-04-01T11:29:53.625Z
+- Date: 2026-04-02T00:15:00+08:00
+- Generated at: 2026-04-01T17:00:48.974Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
+
+### r155 (2026-04-02T00:15:00+08:00)
+- 6e5c050
+  fix: 优化 SettingsDialog 组件中的文本格式和事件处理
+
+### r154 (2026-04-01T22:02:19+08:00)
+- a41ed6c
+  feat: 添加 AEF 聚合完整数据支持，更新设置对话框样式和布局
+
+### r153 (2026-04-01T20:32:05+08:00)
+- 11816e7
+  feat: 优化 WarfarinEndpointRenderer 组件，简化代码结构并增强可读性
+
+### r152 (2026-04-01T20:31:50+08:00)
+- 297438f
+  feat: 更新 WInfoGrid 组件，增强样式和响应式布局
 
 ### r151 (2026-04-01T17:54:48+08:00)
 - 1d6581e
