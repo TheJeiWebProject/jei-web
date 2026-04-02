@@ -291,6 +291,18 @@
                       :model-value="mobileItemClickOpensDetail"
                       @update:model-value="$emit('update:mobile-item-click-opens-detail', !!$event)"
                     />
+                    <div>
+                      <q-btn
+                        flat
+                        dense
+                        color="primary"
+                        :label="t('openSetupWizard')"
+                        @click="$emit('open:setup-wizard')"
+                      />
+                      <div class="text-caption text-grey-7 q-mt-xs">
+                        {{ t('setupWizardOpenHint') }}
+                      </div>
+                    </div>
                     <q-toggle
                       :label="t('detectPcDisableMobile')"
                       :model-value="detectPcDisableMobile"
@@ -1127,6 +1139,7 @@ const emit = defineEmits<{
   'update:favorites-open-stack': [value: boolean];
   'update:persist-history-records': [value: boolean];
   'update:mobile-item-click-opens-detail': [value: boolean];
+  'open:setup-wizard': [];
   'update:hover-tooltip-allow-mouse-enter': [value: boolean];
   'update:hover-tooltip-display-setting': [key: HoverTooltipDisplayKey, value: boolean];
   'update:detect-pc-disable-mobile': [value: boolean];

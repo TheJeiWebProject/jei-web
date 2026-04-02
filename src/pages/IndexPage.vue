@@ -229,6 +229,7 @@
       @update:persist-history-records="settingsStore.setPersistHistoryRecords($event)"
       :mobile-item-click-opens-detail="settingsStore.mobileItemClickOpensDetail"
       @update:mobile-item-click-opens-detail="settingsStore.setMobileItemClickOpensDetail($event)"
+      @open:setup-wizard="openSetupWizardFromSettings"
       :hover-tooltip-allow-mouse-enter="settingsStore.hoverTooltipAllowMouseEnter"
       :hover-tooltip-display="settingsStore.hoverTooltipDisplay"
       @update:hover-tooltip-allow-mouse-enter="settingsStore.setHoverTooltipAllowMouseEnter($event)"
@@ -355,7 +356,8 @@ import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import type { ItemDef, ItemKey, PackData, Recipe } from 'src/jei/types';
-import { useDialogManager } from 'src/stores/dialogManager';
+import { SETUP_WIZARD_DIALOG_ID, useDialogManager } from 'src/stores/dialogManager';
+import { usePackOptionsStore } from 'src/stores/packOptions';
 import {
   clearPackRuntimeCache,
   getAggregateSourcePackIds,
@@ -453,6 +455,7 @@ const settingsStore = useSettingsStore();
 const keyBindingsStore = useKeyBindingsStore();
 const packRoutingRuntimeStore = usePackRoutingRuntimeStore();
 const dialogManager = useDialogManager();
+const packOptionsStore = usePackOptionsStore();
 const { t, locale } = useI18n();
 const pluginManager = new PluginManager();
 for (const plugin of builtinPlugins) {
@@ -1078,6 +1081,13 @@ function onPluginEnabledChange(pluginId: string, enabled: boolean) {
 
 function onPluginSettingChange(pluginId: string, key: string, value: PluginSettingValue) {
   settingsStore.setPluginSetting(pluginId, key, value);
+}
+
+function openSetupWizardFromSettings() {
+  settingsOpen.value = false;
+  settingsStore.requestSetupWizardOpen();
+  dialogManager.resetDialogStatus(SETUP_WIZARD_DIALOG_ID);
+  dialogManager.triggerProcess();
 }
 
 function onKeybindingChange(action: KeyAction, binding: KeyBinding) {
@@ -2887,6 +2897,7 @@ async function loadPacksIndex() {
       packRoutingRuntimeStore.setSources(nextSources);
       applyAllMirrorPreferences();
       packOptions.value = [...custom, ...packOptions.value, ...local];
+      packOptionsStore.setOptions(packOptions.value);
       return;
     }
     const data = (await res.json()) as {
@@ -2941,6 +2952,7 @@ async function loadPacksIndex() {
       applyAllMirrorPreferences();
 
       packOptions.value = [...remote, ...effectiveCustom, ...local];
+      packOptionsStore.setOptions(packOptions.value);
 
       // 如果 store 中的 packId 不在新列表中，切换到第一个
       if (!packOptions.value.some((o) => o.value === settingsStore.selectedPack)) {
@@ -2955,6 +2967,7 @@ async function loadPacksIndex() {
     packRoutingRuntimeStore.setSources(nextSources);
     applyAllMirrorPreferences();
     packOptions.value = [...custom, ...packOptions.value, ...local];
+    packOptionsStore.setOptions(packOptions.value);
   }
 }
 
