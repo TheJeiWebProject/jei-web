@@ -1,18 +1,28 @@
 # About
 
 ## Build
-- Version: pages-build-1-g0f05f4a-dirty
-- Commit: 0f05f4a (0f05f4acb866f91ca377dbdf6426236e6844caf1)
-- Commit count: 159
-- Subject: feat: 添加移动端点击物品后自动切换到详情页的设置选项
+- Version: pages-build-2-g892363d-dirty
+- Commit: 892363d (892363dd3d34d967454e300805b3bdbb6b9b06c5)
+- Commit count: 160
+- Subject: feat: add first-use setup wizard and related settings
 - Author: AndreaFrederica
-- Date: 2026-04-03T01:15:16+08:00
-- Generated at: 2026-04-02T17:34:53.063Z
+- Date: 2026-04-03T02:03:35+08:00
+- Generated at: 2026-04-03T08:59:13.250Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
 
-### Unreleased (2026-04-03T01:15:16+08:00)
+### Unreleased (2026-04-03T02:03:35+08:00)
+- 892363d 2026-04-03T02:03:35+08:00
+  feat: add first-use setup wizard and related settings
+  
+  - Implemented a setup wizard dialog to guide users through initial configurations.
+  - Added translations for the setup wizard in English, Japanese, and Simplified Chinese.
+  - Integrated setup wizard options into the main layout and settings dialog.
+  - Created a new store for managing pack options.
+  - Enhanced settings store to track completion status of the setup wizard.
+  - Updated dialog manager to handle the setup wizard dialog.
+  - Added functionality to open the setup wizard from settings.
 - 0f05f4a 2026-04-03T01:15:16+08:00
   feat: 添加移动端点击物品后自动切换到详情页的设置选项
 

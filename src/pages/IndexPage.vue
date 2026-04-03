@@ -426,6 +426,7 @@ import { itemKeyHash } from 'src/jei/indexing/key';
 import { autoPlanSelections } from 'src/jei/planner/planner';
 import { builtinPlugins } from 'src/jei/plugins/builtin';
 import { PluginManager } from 'src/jei/plugins/runtime';
+import { appPath, packBasePath } from 'src/utils/app-path';
 import type {
   HostApiHandler,
   PluginApiResult,
@@ -2890,7 +2891,7 @@ async function loadPacksIndex() {
   }));
 
   try {
-    const res = await fetch('/packs/index.json');
+    const res = await fetch(appPath('/packs/index.json'));
     if (!res.ok) {
       // 失败时，注册自定义源并返回
       const nextSources = registerCustomSources(reservedIds, knownSources);
@@ -2926,11 +2927,7 @@ async function loadPacksIndex() {
             ? p.aggregateDescriptor.trim()
             : undefined;
         const effectiveMirrors =
-          mirrors.length > 0
-            ? mirrors
-            : aggregateDescriptor
-              ? []
-              : [`/packs/${encodeURIComponent(p.packId)}`];
+          mirrors.length > 0 ? mirrors : aggregateDescriptor ? [] : [packBasePath(p.packId)];
         remoteSources[p.packId] = {
           label: p.label,
           mirrors: effectiveMirrors,
