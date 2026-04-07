@@ -122,7 +122,18 @@
           <q-tooltip>{{ t('importShareLinkOrJson') }}</q-tooltip>
         </q-btn>
 
-        <div :class="$q.dark.isActive ? 'text-white' : 'text-grey-8'">v{{ appVersion }}</div>
+        <q-btn
+          flat
+          dense
+          :round="isMobileTopbar"
+          no-caps
+          :class="$q.dark.isActive ? 'text-white' : 'text-grey-8'"
+          @click="buildInfoDialogVisible = true"
+        >
+          <q-icon name="info" :class="topbarShowVersionButtonText ? 'q-mr-xs' : ''" />
+          <span v-if="topbarShowVersionButtonText">v{{ appVersion }}</span>
+          <q-tooltip>{{ t('buildInfo') }}</q-tooltip>
+        </q-btn>
 
         <q-btn
           flat
@@ -131,8 +142,11 @@
           :class="$q.dark.isActive ? 'text-white' : 'text-grey-8'"
           @click="showQQGroupDialog"
         >
-          <q-icon :name="domainUiPolicy.hideQQGroupLinks ? 'campaign' : 'group'" class="q-mr-xs" />
-          <span>{{ domainUiPolicy.triggerButtonText }}</span>
+          <q-icon
+            :name="topbarGroupButtonIcon"
+            :class="topbarShowGroupButtonText ? 'q-mr-xs' : ''"
+          />
+          <span v-if="topbarShowGroupButtonText">{{ topbarGroupButtonText }}</span>
         </q-btn>
       </q-toolbar>
     </q-header>
@@ -247,6 +261,13 @@
       @skip="handleSetupWizardSkip"
     />
 
+    <BuildInfoDialog
+      v-model:visible="buildInfoDialogVisible"
+      :title="t('buildInfo')"
+      :version-label="t('version')"
+      :app-version="appVersion"
+    />
+
     <InteractiveTour
       v-model="tutorialManager.tutorialState.value.visible"
       :steps="tutorialManager.currentSteps.value"
@@ -269,6 +290,7 @@ import { Dark, useQuasar } from 'quasar';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import EssentialLink, { type EssentialLinkProps } from 'components/EssentialLink.vue';
+import BuildInfoDialog from 'components/BuildInfoDialog.vue';
 import QQGroupDialog from 'components/QQGroupDialog.vue';
 import SetupWizardDialog from 'components/SetupWizardDialog.vue';
 import InteractiveTour, { type TutorialProgress } from 'components/InteractiveTour.vue';
@@ -334,6 +356,15 @@ const restrictedDomainUiPolicy: Partial<DomainUiPolicy> = {
 type DialogMode = 'auto' | 'manual';
 type BoolOverride = boolean | undefined;
 type DialogModeOverride = DialogMode | undefined;
+
+function detectPcUserAgent(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (ua.includes('JEIBrowser')) return true;
+  return ['Windows', 'Macintosh', 'Linux x86_64', 'Linux i686', 'CrOS', 'X11'].some((pattern) =>
+    ua.includes(pattern),
+  );
+}
 
 function parseDomainList(value: string | undefined): Set<string> {
   if (!value) return new Set();
@@ -492,6 +523,30 @@ function resolveDomainUiPolicy(hostname: string): DomainUiPolicy {
 
 const hostname = typeof window === 'undefined' ? '' : window.location.hostname;
 const domainUiPolicy = resolveDomainUiPolicy(hostname);
+const shouldDisableMobileUi = computed(
+  () => settingsStore.detectPcDisableMobile && detectPcUserAgent(),
+);
+const isMobileTopbar = computed(() => !shouldDisableMobileUi.value && $q.screen.lt.md);
+const compactTopbarTriggerButtonText = computed(
+  () =>
+    (typeof env.VITE_RESTRICTED_TRIGGER_BUTTON_TEXT === 'string' &&
+      env.VITE_RESTRICTED_TRIGGER_BUTTON_TEXT) ||
+    restrictedDomainUiPolicy.triggerButtonText ||
+    defaultDomainUiPolicy.triggerButtonText,
+);
+const topbarUsesCompactGroupButton = computed(
+  () => domainUiPolicy.hideQQGroupLinks || isMobileTopbar.value,
+);
+const topbarShowGroupButtonText = computed(() => !isMobileTopbar.value);
+const topbarShowVersionButtonText = computed(() => !isMobileTopbar.value);
+const topbarGroupButtonText = computed(() =>
+  topbarUsesCompactGroupButton.value
+    ? compactTopbarTriggerButtonText.value
+    : domainUiPolicy.triggerButtonText,
+);
+const topbarGroupButtonIcon = computed(() =>
+  topbarUsesCompactGroupButton.value ? 'campaign' : 'group',
+);
 
 // 阶段名称映射
 const stageNames: Record<string, string> = {
@@ -656,6 +711,7 @@ const linksList: EssentialLinkProps[] = [
 
 const leftDrawerOpen = ref(false);
 const qqGroupDialogVisible = ref(false);
+const buildInfoDialogVisible = ref(false);
 const setupWizardVisible = ref(false);
 const tutorialForceShow = ref(false);
 const qqGroupForceShow = ref(false);

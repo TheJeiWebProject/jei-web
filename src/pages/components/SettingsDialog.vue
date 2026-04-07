@@ -282,6 +282,11 @@
                       @update:model-value="$emit('update:recipe-slot-show-name', !!$event)"
                     />
                     <q-toggle
+                      :label="t('recipeQueryShowDataSources')"
+                      :model-value="recipeQueryShowDataSources"
+                      @update:model-value="$emit('update:recipe-query-show-data-sources', !!$event)"
+                    />
+                    <q-toggle
                       :label="t('favoritesOpenStack')"
                       :model-value="favoritesOpensNewStack"
                       @update:model-value="$emit('update:favorites-open-stack', !!$event)"
@@ -295,6 +300,13 @@
                       :label="t('mobileItemClickOpensDetail')"
                       :model-value="mobileItemClickOpensDetail"
                       @update:model-value="$emit('update:mobile-item-click-opens-detail', !!$event)"
+                    />
+                    <q-toggle
+                      :label="t('mobileBottomPackControlsCollapsible')"
+                      :model-value="mobileBottomPackControlsCollapsible"
+                      @update:model-value="
+                        $emit('update:mobile-bottom-pack-controls-collapsible', !!$event)
+                      "
                     />
                     <div>
                       <q-btn
@@ -1057,9 +1069,11 @@ const props = defineProps<{
   itemClickDefaultTab: ItemClickDefaultTab;
   recipeViewMode: 'dialog' | 'panel';
   recipeSlotShowName: boolean;
+  recipeQueryShowDataSources: boolean;
   favoritesOpensNewStack: boolean;
   persistHistoryRecords: boolean;
   mobileItemClickOpensDetail: boolean;
+  mobileBottomPackControlsCollapsible: boolean;
   hoverTooltipAllowMouseEnter: boolean;
   hoverTooltipDisplay: HoverTooltipDisplaySettings;
   detectPcDisableMobile: boolean;
@@ -1142,9 +1156,11 @@ const emit = defineEmits<{
   'update:recipe-view-mode': [value: 'dialog' | 'panel'];
   'update:item-click-default-tab': [value: ItemClickDefaultTab];
   'update:recipe-slot-show-name': [value: boolean];
+  'update:recipe-query-show-data-sources': [value: boolean];
   'update:favorites-open-stack': [value: boolean];
   'update:persist-history-records': [value: boolean];
   'update:mobile-item-click-opens-detail': [value: boolean];
+  'update:mobile-bottom-pack-controls-collapsible': [value: boolean];
   'open:setup-wizard': [];
   'update:hover-tooltip-allow-mouse-enter': [value: boolean];
   'update:hover-tooltip-display-setting': [key: HoverTooltipDisplayKey, value: boolean];
