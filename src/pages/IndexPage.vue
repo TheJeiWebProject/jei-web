@@ -179,6 +179,7 @@
     <!-- 设置对话框 -->
     <settings-dialog
       :open="settingsOpen"
+      :is-mobile="isMobile"
       @update:open="settingsOpen = $event"
       :history-limit="settingsStore.historyLimit"
       @update:history-limit="settingsStore.setHistoryLimit($event)"

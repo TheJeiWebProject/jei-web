@@ -1,18 +1,20 @@
 # About
 
 ## Build
-- Version: pages-build-3-g579f1fe-dirty
-- Commit: 579f1fe (579f1fe2107ddff18fba6cc930360cf373027fff)
-- Commit count: 161
-- Subject: feat: enhance app path handling and improve static serving
+- Version: pages-build-4-g2baa357-dirty
+- Commit: 2baa357 (2baa357121a0f7f239f21f9bd7e86450ad90d27d)
+- Commit count: 162
+- Subject: feat: 增加相对路径服务脚本，优化静态资源加载
 - Author: AndreaFrederica
-- Date: 2026-04-03T17:08:02+08:00
-- Generated at: 2026-04-03T09:39:03.089Z
+- Date: 2026-04-03T17:47:37+08:00
+- Generated at: 2026-04-07T12:13:40.818Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
 
-### Unreleased (2026-04-03T17:08:02+08:00)
+### Unreleased (2026-04-03T17:47:37+08:00)
+- 2baa357 2026-04-03T17:47:37+08:00
+  feat: 增加相对路径服务脚本，优化静态资源加载
 - 579f1fe 2026-04-03T17:08:02+08:00
   feat: enhance app path handling and improve static serving
   

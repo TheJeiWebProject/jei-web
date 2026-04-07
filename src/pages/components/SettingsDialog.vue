@@ -1,9 +1,14 @@
 <template>
-  <q-dialog :model-value="open" @update:model-value="$emit('update:open', $event)">
-    <q-card class="settings-shell">
+  <q-dialog
+    :model-value="open"
+    :maximized="isMobile"
+    @update:model-value="$emit('update:open', $event)"
+  >
+    <q-card class="settings-shell" :class="{ 'settings-shell--mobile': isMobile }">
       <q-card-section class="row items-center q-px-md q-py-sm">
         <div class="text-h6">{{ t('settings') }}</div>
         <q-space />
+        <q-btn flat round icon="close" @click="$emit('update:open', false)" />
       </q-card-section>
 
       <q-separator />
@@ -21,8 +26,8 @@
 
       <q-separator />
 
-      <div class="settings-layout">
-        <div class="settings-nav">
+      <div class="settings-layout" :class="{ 'settings-layout--mobile': isMobile }">
+        <div class="settings-nav" :class="{ 'settings-nav--mobile': isMobile }">
           <q-list dense padding>
             <q-item
               v-for="section in visibleSections"
@@ -42,7 +47,7 @@
           </q-list>
         </div>
 
-        <q-separator vertical />
+        <q-separator v-if="!isMobile" vertical />
 
         <div class="settings-content">
           <div class="settings-scroll">
@@ -960,8 +965,8 @@
 
       <q-separator />
 
-      <q-card-actions align="right">
-        <q-btn flat :label="t('close')" color="primary" v-close-popup />
+      <q-card-actions v-if="!isMobile" align="right" class="settings-actions">
+        <q-btn flat :label="t('close')" color="primary" @click="$emit('update:open', false)" />
       </q-card-actions>
     </q-card>
   </q-dialog>
@@ -1030,6 +1035,7 @@ const sectionDefs: Array<{ key: SectionKey; label: string; keywords: string[] }>
 
 const props = defineProps<{
   open: boolean;
+  isMobile: boolean;
   historyLimit: number;
   favoritePageSizeMin: number;
   favoritePageSizeMax: number;
@@ -1396,6 +1402,14 @@ function formatLatency(latencyMs: number | null): string {
   flex-direction: column;
 }
 
+.settings-shell--mobile {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 220px 1px minmax(0, 1fr);
@@ -1403,9 +1417,29 @@ function formatLatency(latencyMs: number | null): string {
   min-height: 0;
 }
 
+.settings-layout--mobile {
+  display: block;
+}
+
 .settings-nav {
   background: rgba(127, 127, 127, 0.05);
   overflow: auto;
+}
+
+.settings-nav--mobile :deep(.q-list) {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 6px;
+  padding: 10px 8px;
+}
+
+.settings-nav--mobile :deep(.q-item) {
+  flex: 0 0 auto;
+  border-radius: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
 }
 
 .settings-content {
@@ -1416,6 +1450,11 @@ function formatLatency(latencyMs: number | null): string {
 .settings-scroll {
   height: 100%;
   overflow: auto;
+}
+
+.settings-actions {
+  border-top: 1px solid rgba(127, 127, 127, 0.18);
+  background: var(--q-page-background);
 }
 
 .hover-preview-grid {
