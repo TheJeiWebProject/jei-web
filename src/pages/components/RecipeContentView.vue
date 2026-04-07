@@ -4,7 +4,7 @@
     <crafting-planner-view
       v-if="pack && index && currentItemKey"
       v-show="activeTab === 'planner'"
-      class="col overflow-auto q-pa-md"
+      class="col planner-tab-pane q-pa-md"
       :pack="pack"
       :index="index"
       :root-item-key="currentItemKey"
@@ -1646,6 +1646,12 @@ provide('wikiImageOpen', openViewer);
 .wiki-description :deep(pre code) {
   background: none;
   padding: 0;
+}
+
+.planner-tab-pane {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 .wiki-description :deep(a) {
