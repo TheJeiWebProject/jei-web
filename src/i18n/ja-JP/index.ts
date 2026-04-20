@@ -330,6 +330,11 @@ export default {
   useProductRecovery: '製品リカバリーを使用',
   lpMode: 'LP最適化モード',
   lpModeTooltip: '線形計画ソルバーを使用してレシピの組み合わせを自動最適化。',
+  integerMachineMode: '整数機械数モード',
+  integerMachineModeTooltip: '0.23 台のような小数機械を避けるため、整数の機械台数で求解します。',
+  discreteMachineRateMode: '減速運転を許可',
+  discreteMachineRateModeTooltip:
+    '整数機械数モードで、機械ごとに 1/2 や 1/4 などの離散的な低速運転を許可し、追加の全速機をむやみに増やさないようにします。',
   autoRecipePlusLP: '自動レシピ + LP',
   autoRecipePlusLPTooltip: '最適なレシピを自動選択し、LPで解決',
   lpRawData: 'LP生データ',

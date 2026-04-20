@@ -331,6 +331,12 @@ export default {
   useProductRecovery: 'Use Product Recovery',
   lpMode: 'LP Optimization Mode',
   lpModeTooltip: 'Use linear programming solver to auto-optimize recipe combinations.',
+  integerMachineMode: 'Integer Machine Mode',
+  integerMachineModeTooltip:
+    'Solve with integer machine counts to avoid fractional machine results such as 0.23 machines.',
+  discreteMachineRateMode: 'Allow Reduced Machine Rates',
+  discreteMachineRateModeTooltip:
+    'In integer machine mode, allow each machine to run at discrete reduced rates such as 1/2 or 1/4 speed before adding another full machine.',
   autoRecipePlusLP: 'Auto Recipe + LP',
   autoRecipePlusLPTooltip: 'Auto-select optimal recipes, then solve with LP',
   lpRawData: 'LP Raw Data',

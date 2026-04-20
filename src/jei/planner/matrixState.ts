@@ -53,10 +53,7 @@ export interface MatrixStateWithNorm {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function getOrInitItemValues(
-  map: Record<string, ItemValues>,
-  hash: string,
-): ItemValues {
+function getOrInitItemValues(map: Record<string, ItemValues>, hash: string): ItemValues {
   if (!map[hash]) map[hash] = { out: R_ZERO };
   return map[hash];
 }
@@ -79,14 +76,20 @@ export function buildMatrixState(args: {
   selectedRecipeIdByItemKeyHash: Map<string, string>;
   /** normalised tagId → chosen itemId */
   selectedItemIdByTagId: Map<string, string>;
+  /** itemKeyHash values forced to be treated as externally supplied raw inputs */
+  forcedRawItemKeyHashes?: ReadonlySet<string>;
   defaultNs: string;
   maximizeType?: MaximizeType;
 }): MatrixStateWithNorm {
   const {
     objectives,
     index,
-    selectedRecipeIdByItemKeyHash,
+    // selectedRecipeIdByItemKeyHash is intentionally NOT used for LP matrix
+    // graph building — the LP must see all candidate producers to discover
+    // multi-source splits.  The field is kept in the signature for callers
+    // that still pass it (tree builder, persistence, etc.).
     selectedItemIdByTagId,
+    forcedRawItemKeyHashes,
     defaultNs,
     maximizeType = MaximizeType.Ratio,
   } = args;
@@ -121,17 +124,24 @@ export function buildMatrixState(args: {
     if (visitedItems.has(h)) return;
     visitedItems.add(h);
 
+    if (forcedRawItemKeyHashes?.has(h)) {
+      unproduceableIds.add(h);
+      return;
+    }
+
     const producingIds = recipesProducingItem(index, key);
     if (producingIds.length === 0) {
       unproduceableIds.add(h);
       return;
     }
 
-    // Honour user recipe selection; fall back to first (highest-priority) option
-    const selectedId = selectedRecipeIdByItemKeyHash.get(h);
-    const recipeIdToUse = selectedId ?? producingIds[0]!;
-
-    exploreRecipe(recipeIdToUse);
+    // Always include every reachable producer so the LP can split supply
+    // across multiple valid recipes for the same item.  Pre-selections from
+    // autoPlanSelections or earlier LP runs must NOT filter the matrix —
+    // otherwise the LP can never discover multi-source solutions.
+    for (const recipeId of producingIds) {
+      exploreRecipe(recipeId);
+    }
   };
 
   const exploreRecipe = (recipeId: string): void => {
@@ -159,7 +169,13 @@ export function buildMatrixState(args: {
 
     // Resolve tag inputs — at LP time tags should already be resolved via
     // selectedItemIdByTagId; we exploreItem on the resolved id here as well
-    const { inputs } = extractRawInputs(recipe, recipeType, index, defaultNs, selectedItemIdByTagId);
+    const { inputs } = extractRawInputs(
+      recipe,
+      recipeType,
+      index,
+      defaultNs,
+      selectedItemIdByTagId,
+    );
     for (const key of inputs) {
       exploreItem(key);
     }
@@ -199,7 +215,9 @@ export function buildMatrixState(args: {
       // Limit: take the tightest (minimum) bound
       const existing = itemLimits[h];
       itemLimits[h] = existing
-        ? (ratePerSecond.lt(existing) ? ratePerSecond : existing)
+        ? ratePerSecond.lt(existing)
+          ? ratePerSecond
+          : existing
         : ratePerSecond;
     }
   }

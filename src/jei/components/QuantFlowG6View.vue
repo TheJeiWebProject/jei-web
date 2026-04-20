@@ -357,8 +357,9 @@ function toGraphData(): GraphData {
           labelFill: isDark ? '#e5e7eb' : '#1f2937',
           labelFontSize: 14,
           labelLineHeight: 18,
-          labelMaxWidth: 176,
+          labelMaxWidth: 320,
           labelWordWrap: true,
+          labelMaxLines: 2,
           icon: true,
           ...(resolvedIcon
             ? { iconSrc: resolvedIcon }
@@ -393,6 +394,7 @@ function toGraphData(): GraphData {
         labelFill: isDark ? '#e5e7eb' : '#1f2937',
         labelFontSize: 14,
         labelLineHeight: 18,
+        labelMaxLines: 2,
         icon: true,
         iconText: t('liquid'),
         iconFontSize: 28,
@@ -490,6 +492,14 @@ async function applyPersistedNodePositions() {
     .map(([id, pos]) => [id, [pos.x, pos.y] as [number, number]]);
   if (!positions.length) return;
   await graph.translateElementTo(Object.fromEntries(positions), false);
+}
+
+function hasPersistedNodePositions(): boolean {
+  return Object.entries(props.nodePositions ?? {}).some(([id, pos]) => (
+    modelNodeIdSet.value.has(id)
+    && Number.isFinite(pos?.x)
+    && Number.isFinite(pos?.y)
+  ));
 }
 
 async function renderGraph(fitView: boolean) {
@@ -599,7 +609,6 @@ onMounted(() => {
     const nextWidth = Math.floor(rawWidth);
     const nextHeight = Math.floor(rawHeight);
     graph.resize(nextWidth, nextHeight);
-    void graph.fitView();
   });
   resizeObserver.observe(el);
 });
@@ -607,7 +616,6 @@ onMounted(() => {
 watch(
   () => [
     props.model,
-    props.nodePositions,
     props.itemDefsByKeyHash,
     props.displayUnit,
     props.widthByRate,
@@ -618,8 +626,16 @@ watch(
     Dark.isActive,
   ],
   () => {
-    void renderGraph(true);
+    void renderGraph(!hasPersistedNodePositions());
     void ensureResolvedIcons().then(() => renderGraph(false));
+  },
+  { deep: true },
+);
+
+watch(
+  () => props.nodePositions,
+  () => {
+    void applyPersistedNodePositions();
   },
   { deep: true },
 );

@@ -107,6 +107,24 @@
         >
           <q-tooltip>{{ t('lpModeTooltip') }}</q-tooltip>
         </q-toggle>
+        <q-toggle
+          v-if="lpMode"
+          v-model="integerMachines"
+          dense
+          color="deep-purple"
+          :label="t('integerMachineMode')"
+        >
+          <q-tooltip>{{ t('integerMachineModeTooltip') }}</q-tooltip>
+        </q-toggle>
+        <q-toggle
+          v-if="lpMode && integerMachines"
+          v-model="discreteMachineRates"
+          dense
+          color="deep-purple"
+          :label="t('discreteMachineRateMode')"
+        >
+          <q-tooltip>{{ t('discreteMachineRateModeTooltip') }}</q-tooltip>
+        </q-toggle>
         <q-btn
           :color="lpMode ? 'deep-purple' : 'primary'"
           :icon="lpMode ? 'science' : 'calculate'"
@@ -358,15 +376,12 @@
               </q-list>
             </q-card>
 
-            <q-card v-if="mergedTree.catalysts.size > 0" flat bordered class="q-pa-md">
+            <q-card v-if="catalystEntries.length > 0" flat bordered class="q-pa-md">
               <div class="text-subtitle2 q-mb-md">
-                {{ t('catalystRequirements', { count: mergedTree.catalysts.size }) }}
+                {{ t('catalystRequirements', { count: catalystEntries.length }) }}
               </div>
               <q-list dense bordered separator class="rounded-borders">
-                <q-item
-                  v-for="[itemId, amount] in Array.from(mergedTree.catalysts.entries())"
-                  :key="itemId"
-                >
+                <q-item v-for="[itemId, amount] in catalystEntries" :key="itemId">
                   <q-item-section avatar>
                     <stack-view
                       :content="{ kind: 'item', id: itemId, amount }"
@@ -1002,9 +1017,9 @@
               <div class="col-12 col-md-4">
                 <q-card flat bordered class="q-pa-md">
                   <div class="text-subtitle2">{{ t('totalPower') }}</div>
-                  <div class="text-h6">{{ formatAmount(calcTotals?.power ?? 0) }} kW</div>
+                  <div class="text-h6">{{ formatAmount(calcPower) }} kW</div>
                   <div class="text-caption text-grey-7">
-                    {{ t('pollutionPerMin', { amount: formatAmount(calcTotals?.pollution ?? 0) }) }}
+                    {{ t('pollutionPerMin', { amount: formatAmount(calcPollution) }) }}
                   </div>
                 </q-card>
               </div>
@@ -1211,8 +1226,7 @@
               <div class="text-subtitle2 q-mb-sm">
                 {{ t('lpSolutionResult') }}
                 <q-badge color="deep-purple" class="q-ml-sm"
-                  >{{ lpResult.steps.filter((s) => s.recipeId).length }}
-                  {{ t('recipes2') }}</q-badge
+                  >{{ lpRawRows.length }} {{ t('recipes2') }}</q-badge
                 >
               </div>
               <q-table
@@ -1225,7 +1239,7 @@
               >
                 <template #body-cell-name="props">
                   <q-td :props="props">
-                    <div class="row items-center q-gutter-xs">
+                    <div class="row items-start q-gutter-xs no-wrap">
                       <stack-view
                         v-if="props.row.itemId"
                         :content="{ kind: 'item', id: props.row.itemId, amount: 1 }"
@@ -1234,7 +1248,18 @@
                         :show-name="false"
                         :show-subtitle="false"
                       />
-                      <span>{{ props.row.name }}</span>
+                      <div class="column">
+                        <span>{{ props.row.name }}</span>
+                        <span v-if="props.row.recipeLabel" class="text-caption text-grey-6">
+                          {{ props.row.recipeLabel }}
+                        </span>
+                        <span v-if="props.row.inputSummary" class="text-caption text-grey-6">
+                          {{ props.row.inputSummary }}
+                        </span>
+                        <span v-if="props.row.outputSummary" class="text-caption text-grey-6">
+                          {{ props.row.outputSummary }}
+                        </span>
+                      </div>
                       <q-badge v-if="!props.row.recipeId" color="grey" :label="t('rawMaterial')" />
                     </div>
                   </q-td>
@@ -1327,15 +1352,17 @@ import {
 import { ObjectiveType } from 'src/jei/planner/types';
 import type { ObjectiveState, ObjectiveUnit, PlannerResult } from 'src/jei/planner/types';
 import { solveAdvanced } from 'src/jei/planner/advancedPlanner';
-import { normalizeRecipe } from 'src/jei/planner/recipeAdapter';
+import { mergeLpRecipeSelections } from 'src/jei/planner/lpSelections';
 import { rational } from 'src/jei/planner/rational';
 import StackView from 'src/jei/components/StackView.vue';
 import RecipeViewer from 'src/jei/components/RecipeViewer.vue';
 import LineWidthCurveEditor from 'src/jei/components/LineWidthCurveEditor.vue';
 import QuantFlowView from 'src/jei/components/QuantFlowView.vue';
 import LineFlowView from 'src/jei/components/LineFlowView.vue';
+import { buildLpProductionLineModel } from 'src/jei/planner/lpFlow';
+import { buildLpGraphFlowModel } from 'src/jei/planner/lpGraphFlow';
 import { buildProductionLineModel } from 'src/jei/planner/productionLine';
-import { buildQuantFlowModel } from 'src/jei/planner/quantFlow';
+import { buildLpQuantFlowModel, buildQuantFlowModel } from 'src/jei/planner/quantFlow';
 import {
   convertAmountPerMinuteToUnitValue,
   evaluateLineWidthCurve,
@@ -1472,6 +1499,8 @@ const quantDisplayUnit = ref<PlannerTargetUnit>('per_minute');
 const quantShowFluids = ref(true);
 const forcedRawItemKeyHashes = ref<Set<string>>(new Set());
 const useProductRecovery = ref(false);
+const integerMachines = ref(true);
+const discreteMachineRates = ref(true);
 const selectedLineNodeId = ref<string | null>(null);
 const lineNodePositions = ref(new Map<string, { x: number; y: number }>());
 const quantNodePositions = ref(new Map<string, { x: number; y: number }>());
@@ -1561,6 +1590,8 @@ function buildCurrentPlanPayload(
     targetAmount: targets.value[0]!.rate,
     ...(isPlannerTargetUnit(targets.value[0]!.unit) ? { targetUnit: targets.value[0]!.unit } : {}),
     useProductRecovery: useProductRecovery.value,
+    integerMachines: integerMachines.value,
+    discreteMachineRates: discreteMachineRates.value,
     selectedRecipeIdByItemKeyHash: mapToRecord(selectedRecipeIdByItemKeyHash.value),
     selectedItemIdByTagId: mapToRecord(selectedItemIdByTagId.value),
     kind: 'advanced',
@@ -1693,6 +1724,32 @@ function applySavedViewState(viewState: AdvancedPlannerViewState | undefined): v
 
 const rawItemTotals = computed(() => {
   const totals = new Map<ItemId, number>();
+  if (lpMode.value && lpResult.value?.lpFlow) {
+    const model = buildLpGraphFlowModel({
+      flow: lpResult.value.lpFlow,
+      includeFluids: true,
+    });
+    const incomingCount = new Map<string, number>();
+    const outgoingCount = new Map<string, number>();
+    model.nodes.forEach((node) => {
+      incomingCount.set(node.nodeId, 0);
+      outgoingCount.set(node.nodeId, 0);
+    });
+    model.edges.forEach((edge) => {
+      incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+      outgoingCount.set(edge.source, (outgoingCount.get(edge.source) ?? 0) + 1);
+    });
+    model.nodes.forEach((node) => {
+      if (node.kind !== 'item') return;
+      const isLeafInput = (outgoingCount.get(node.nodeId) ?? 0) === 0;
+      const isConsumedSomewhere = (incomingCount.get(node.nodeId) ?? 0) > 0;
+      const isExplicitRaw = node.nodeId.startsWith('lgn:raw:');
+      if (!isLeafInput) return;
+      if (!(isConsumedSomewhere || isExplicitRaw)) return;
+      totals.set(node.itemKey.id, (totals.get(node.itemKey.id) ?? 0) + node.amountPerSecond * 60);
+    });
+    return totals;
+  }
   if (!mergedTree.value) return totals;
 
   // Pre-pass: find the maximum machineCount for each recipeId across the entire merged tree.
@@ -1751,6 +1808,29 @@ const rawItemTotals = computed(() => {
 
 const rawFluidTotals = computed(() => {
   const totals = new Map<string, number>();
+  if (lpMode.value && lpResult.value?.lpFlow) {
+    const model = buildLpGraphFlowModel({
+      flow: lpResult.value.lpFlow,
+      includeFluids: true,
+    });
+    const incomingCount = new Map<string, number>();
+    const outgoingCount = new Map<string, number>();
+    model.nodes.forEach((node) => {
+      incomingCount.set(node.nodeId, 0);
+      outgoingCount.set(node.nodeId, 0);
+    });
+    model.edges.forEach((edge) => {
+      incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+      outgoingCount.set(edge.source, (outgoingCount.get(edge.source) ?? 0) + 1);
+    });
+    model.nodes.forEach((node) => {
+      if (node.kind !== 'fluid') return;
+      if ((outgoingCount.get(node.nodeId) ?? 0) !== 0) return;
+      if ((incomingCount.get(node.nodeId) ?? 0) <= 0) return;
+      totals.set(node.id, (totals.get(node.id) ?? 0) + node.amountPerSecond * 60);
+    });
+    return totals;
+  }
   if (!mergedTree.value) return totals;
 
   // Same pre-pass as rawItemTotals: find max machineCount per recipeId.
@@ -1809,6 +1889,31 @@ const rawFluidEntries = computed(() => {
   return Array.from(rawFluidTotals.value.entries()).sort((a, b) => b[1] - a[1]);
 });
 
+const catalystTotals = computed(() => {
+  const totals = new Map<ItemId, number>();
+  if (lpMode.value && lpResult.value?.lpFlow && props.index) {
+    lpResult.value.lpFlow.recipes.forEach((recipeRun) => {
+      if (recipeRun.ratePerSecond <= 1e-12) return;
+      const recipe = props.index?.recipesById.get(recipeRun.recipeId);
+      if (!recipe) return;
+      const recipeType = props.index?.recipeTypesByKey.get(recipe.type);
+      const { catalysts } = extractRecipeStacks(recipe, recipeType);
+      catalysts.forEach((catalyst) => {
+        const amount = finiteOr(catalyst.amount, 0);
+        const prev = totals.get(catalyst.id) ?? 0;
+        totals.set(catalyst.id, Math.max(prev, amount));
+      });
+    });
+    return totals;
+  }
+  if (!mergedTree.value) return totals;
+  return mergedTree.value.catalysts;
+});
+
+const catalystEntries = computed(() => {
+  return Array.from(catalystTotals.value.entries()).sort((a, b) => b[1] - a[1]);
+});
+
 const allTargetsUseItems = computed(
   () => targets.value.length > 0 && targets.value.every((target) => target.unit === 'items'),
 );
@@ -1827,6 +1932,7 @@ type CycleSeedInfo = {
 };
 
 const cycleSeedEntries = computed<CycleSeedInfo[]>(() => {
+  if (lpMode.value && lpResult.value?.lpFlow) return [];
   if (!mergedTree.value) return [];
   const seedsByKey = new Map<string, CycleSeedInfo>();
 
@@ -1913,10 +2019,28 @@ const forcedRawSignature = computed(() =>
 
 watch(forcedRawSignature, () => {
   recomputePlanningState();
+  emitLiveState();
+  if (
+    lpMode.value && planningStarted.value && !lpPendingAfterDecisions.value && allDecisions.value.length === 0
+  ) {
+    runLpSolve();
+  }
 });
 watch(useProductRecovery, () => {
   recomputePlanningState();
   emitLiveState();
+});
+watch(integerMachines, () => {
+  emitLiveState();
+  if (lpMode.value && planningStarted.value && !lpPendingAfterDecisions.value) {
+    runLpSolve();
+  }
+});
+watch(discreteMachineRates, () => {
+  emitLiveState();
+  if (lpMode.value && integerMachines.value && planningStarted.value && !lpPendingAfterDecisions.value) {
+    runLpSolve();
+  }
 });
 
 const buildMergedTree = () => {
@@ -2085,6 +2209,8 @@ const loadSavedPlan = (payload: PlannerSavePayload) => {
   );
   selectedItemIdByTagId.value = new Map(Object.entries(payload.selectedItemIdByTagId ?? {}));
   useProductRecovery.value = payload.useProductRecovery === true;
+  integerMachines.value = payload.integerMachines !== false;
+  discreteMachineRates.value = payload.discreteMachineRates !== false;
   forcedRawItemKeyHashes.value = new Set(payload.forcedRawItemKeyHashes ?? []);
   applySavedViewState(payload.viewState);
   emitLiveState();
@@ -2175,29 +2301,21 @@ const runLpSolve = () => {
     index: props.index,
     selectedRecipeIdByItemKeyHash: selectedRecipeIdByItemKeyHash.value,
     selectedItemIdByTagId: selectedItemIdByTagId.value as Map<string, string>,
+    forcedRawItemKeyHashes: forcedRawItemKeyHashes.value,
     defaultNs: props.pack.manifest.gameId,
+    integerMachines: integerMachines.value,
+    discreteMachineRates: discreteMachineRates.value,
   })
     .then((result) => {
       lpResult.value = result;
       lpSolving.value = false;
-      // 把 LP 求出的配方选择全部回写，覆盖已有选择，保证树与 LP 结果一致。
-      // 对于多产物配方（如精炼炉），LP 每条配方只生成一个 Step（主产物），
-      // 但副产物也需映射到同一配方；否则副产物目标会 fallback 到错误配方。
-      const merged = new Map(selectedRecipeIdByItemKeyHash.value);
-      for (const step of result.steps) {
-        if (!step.recipeId) continue;
-        const recipe = props.index!.recipesById.get(step.recipeId);
-        if (recipe) {
-          const recipeType = props.index!.recipeTypesByKey.get(recipe.type);
-          const norm = normalizeRecipe(recipe, recipeType);
-          for (const { key } of norm.outputItems) {
-            merged.set(itemKeyHash(key), step.recipeId);
-          }
-        } else if (step.itemKey) {
-          merged.set(itemKeyHash(step.itemKey), step.recipeId);
-        }
-      }
-      selectedRecipeIdByItemKeyHash.value = merged;
+      // LP 允许多个 producer 同时供给同一物品；树模式做不到这一点。
+      // 这里仅回写每个物品的主供给配方，避免小流量副产/回收配方覆盖主来源，
+      // 例如水泵被少量净化副产的出水覆盖，进而把树重新带回循环链。
+      selectedRecipeIdByItemKeyHash.value = mergeLpRecipeSelections({
+        base: selectedRecipeIdByItemKeyHash.value,
+        ...(result.lpFlow ? { lpFlow: result.lpFlow } : {}),
+      });
       planningStarted.value = true;
       // LP 已决定所有配方，跳过 collectPendingDecisions 直接构建树；
       // 否则 LP 新引入的子依赖会被判为"待决策"从而清空 mergedTree。
@@ -2407,6 +2525,8 @@ function emitLiveState() {
     targetAmount: targets.value[0]?.rate ?? 1,
     ...(isPlannerTargetUnit(targets.value[0]?.unit) ? { targetUnit: targets.value[0]?.unit } : {}),
     useProductRecovery: useProductRecovery.value,
+    integerMachines: integerMachines.value,
+    discreteMachineRates: discreteMachineRates.value,
     selectedRecipeIdByItemKeyHash: mapToRecord(selectedRecipeIdByItemKeyHash.value),
     selectedItemIdByTagId: mapToRecord(selectedItemIdByTagId.value),
     forcedRawItemKeyHashes: Array.from(forcedRawItemKeyHashes.value),
@@ -2503,41 +2623,52 @@ function toggleCollapsed(nodeId: string) {
   collapsed.value = next;
 }
 
-type TreeRow = { node: RequirementNode; depth: number };
-type TreeListRow = { node: RequirementNode; connect: boolean[] };
+type TreeRow = { node: PlannerTreeNode; depth: number };
+type TreeListRow = { node: PlannerTreeNode; connect: boolean[] };
 
 const treeRows = computed<TreeRow[]>(() => {
-  if (!mergedTree.value) return [];
+  const roots = lpTreeRoots.value.length
+    ? lpTreeRoots.value
+    : mergedTree.value
+      ? [mergedTree.value.root]
+      : [];
+  if (!roots.length) return [];
   const rows: TreeRow[] = [];
 
-  const walk = (node: RequirementNode, depth: number) => {
+  const walk = (node: PlannerTreeNode, depth: number) => {
     rows.push({ node, depth });
     if (node.kind !== 'item') return;
     if (collapsed.value.has(node.nodeId)) return;
     node.children.forEach((c) => walk(c, depth + 1));
   };
 
-  walk(mergedTree.value.root, 0);
+  roots.forEach((root) => walk(root, 0));
   return rows;
 });
 
 const treeListRows = computed<TreeListRow[]>(() => {
-  if (!mergedTree.value) return [];
+  const roots = lpTreeRoots.value.length
+    ? lpTreeRoots.value
+    : mergedTree.value
+      ? [mergedTree.value.root]
+      : [];
+  if (!roots.length) return [];
   const rows: TreeListRow[] = [];
 
-  const walk = (node: RequirementNode, connect: boolean[]) => {
+  const walk = (node: PlannerTreeNode, connect: boolean[]) => {
     rows.push({ node, connect });
     if (node.kind !== 'item') return;
     if (collapsed.value.has(node.nodeId)) return;
     node.children.forEach((c, idx) => walk(c, [...connect, idx !== node.children.length - 1]));
   };
 
-  walk(mergedTree.value.root, []);
+  roots.forEach((root, idx) => walk(root, [idx !== roots.length - 1]));
   return rows;
 });
 
 const recoveryProducedByNodeId = computed(() => {
   const out = new Map<string, Array<{ itemKey: ItemKey; amount: number }>>();
+  if (lpMode.value && lpResult.value?.lpFlow) return out;
   if (!mergedTree.value) return out;
 
   const byNodeAndItem = new Map<string, Map<string, { itemKey: ItemKey; amount: number }>>();
@@ -2581,11 +2712,11 @@ function finiteOr(n: unknown, fallback: number): number {
   return Number.isFinite(v) ? v : fallback;
 }
 
-function nodeDisplayAmount(node: RequirementNode): number {
+function nodeDisplayAmount(node: PlannerTreeNode): number {
   return finiteOr(node.amount, 0);
 }
 
-function nodeDisplayRate(node: RequirementNode): number {
+function nodeDisplayRate(node: PlannerTreeNode): number {
   const amount = nodeDisplayAmount(node);
   if (treeDisplayUnit.value === 'items') return amount;
   if (treeDisplayUnit.value === 'per_second') return amount / 60;
@@ -2593,10 +2724,7 @@ function nodeDisplayRate(node: RequirementNode): number {
   return amount;
 }
 
-function nodeDisplayRateByUnit(
-  node: RequirementNode,
-  unit: PlannerTargetUnit,
-): number {
+function nodeDisplayRateByUnit(node: RequirementNode, unit: PlannerTargetUnit): number {
   const amount = nodeDisplayAmount(node);
   if (unit === 'items') return amount;
   if (unit === 'per_second') return amount / 60;
@@ -2604,7 +2732,7 @@ function nodeDisplayRateByUnit(
   return amount;
 }
 
-function nodeBeltsText(node: RequirementNode): string {
+function nodeBeltsText(node: PlannerTreeNode): string {
   if (node.kind !== 'item') return '';
   const perSecond = nodeDisplayAmount(node) / 60;
   const belts = perSecond / beltSpeed.value;
@@ -2613,9 +2741,9 @@ function nodeBeltsText(node: RequirementNode): string {
   return String(formatAmount(belts));
 }
 
-function nodeMachinesText(node: RequirementNode): string {
+function nodeMachinesText(node: PlannerTreeNode): string {
   if (node.kind !== 'item') return '';
-  const meta = node as RequirementNode & { machineCount?: unknown; machines?: unknown };
+  const meta = node as PlannerTreeNode & { machineCount?: unknown; machines?: unknown };
   const machineCount = finiteOr(meta.machineCount, 0);
   if (Number.isFinite(machineCount) && machineCount > 0) return String(Math.round(machineCount));
   const machines = finiteOr(meta.machines, 0);
@@ -2623,9 +2751,9 @@ function nodeMachinesText(node: RequirementNode): string {
   return String(Math.ceil(machines - 1e-9));
 }
 
-function nodePowerText(node: RequirementNode): string {
+function nodePowerText(node: PlannerTreeNode): string {
   if (node.kind !== 'item') return '';
-  const power = finiteOr((node as RequirementNode & { power?: unknown }).power, 0);
+  const power = finiteOr((node as PlannerTreeNode & { power?: unknown }).power, 0);
   if (!Number.isFinite(power) || power <= 0) return '';
   return `${formatAmount(power)} kW`;
 }
@@ -2643,20 +2771,14 @@ function unitSuffix(unit: PlannerTargetUnit) {
   return '/min';
 }
 
-function displayRateFromAmount(
-  amountPerMinute: number,
-  unit: PlannerTargetUnit,
-) {
+function displayRateFromAmount(amountPerMinute: number, unit: PlannerTargetUnit) {
   if (unit === 'items') return amountPerMinute;
   if (unit === 'per_second') return amountPerMinute / 60;
   if (unit === 'per_hour') return amountPerMinute * 60;
   return amountPerMinute;
 }
 
-function rateByUnitFromPerSecond(
-  perSecond: number,
-  unit: PlannerTargetUnit,
-) {
+function rateByUnitFromPerSecond(perSecond: number, unit: PlannerTargetUnit) {
   if (unit === 'items') return perSecond * 60;
   if (unit === 'per_second') return perSecond;
   if (unit === 'per_hour') return perSecond * 3600;
@@ -2762,7 +2884,245 @@ type LineFlowEdgeData = {
   surplus?: boolean;
 };
 
+type LpTreeNode =
+  | {
+      kind: 'item';
+      nodeId: string;
+      itemKey: ItemKey;
+      amount: number;
+      children: LpTreeNode[];
+      machineItemId?: ItemId;
+      machineCount?: number;
+      power?: number;
+      recovery?: boolean;
+      recoverySourceItemKey?: ItemKey;
+      recoverySourceRecipeId?: string;
+      recoverySourceRecipeTypeKey?: string;
+      cycle?: boolean;
+      cycleSeed?: boolean;
+    }
+  | {
+      kind: 'fluid';
+      nodeId: string;
+      id: string;
+      unit?: string;
+      amount: number;
+    };
+
+type PlannerTreeNode = RequirementNode | LpTreeNode;
+
+function buildLpGraphFlowView(): { nodes: Node<GraphNodeData>[]; edges: Edge[] } {
+  if (!lpResult.value?.lpFlow) return { nodes: [], edges: [] };
+
+  const model = buildLpGraphFlowModel({
+    flow: lpResult.value.lpFlow,
+    includeFluids: graphShowFluids.value,
+  });
+  if (!model.nodes.length) return { nodes: [], edges: [] };
+
+  const nodeW = 240;
+  const nodeH = 64;
+  const gapX = 64;
+  const gapY = 96;
+  const pad = 16;
+
+  const incomingCount = new Map<string, number>();
+  const outgoingBySource = new Map<string, string[]>();
+  model.nodes.forEach((node) => incomingCount.set(node.nodeId, 0));
+  model.edges.forEach((edge) => {
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+    const bucket = outgoingBySource.get(edge.source) ?? [];
+    bucket.push(edge.target);
+    outgoingBySource.set(edge.source, bucket);
+  });
+
+  const roots = model.nodes
+    .map((node) => node.nodeId)
+    .filter((nodeId) => (incomingCount.get(nodeId) ?? 0) === 0)
+    .sort((a, b) => a.localeCompare(b));
+
+  const depthById = new Map<string, number>();
+  const seedNodeIds = roots.length > 0 ? roots : model.nodes.map((node) => node.nodeId).sort();
+  const seen = new Set<string>();
+
+  seedNodeIds.forEach((seedNodeId) => {
+    if (seen.has(seedNodeId)) return;
+    const queue = [{ nodeId: seedNodeId, depth: depthById.get(seedNodeId) ?? 0 }];
+    seen.add(seedNodeId);
+    depthById.set(seedNodeId, depthById.get(seedNodeId) ?? 0);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      (outgoingBySource.get(current.nodeId) ?? []).forEach((targetId) => {
+        if (seen.has(targetId)) return;
+        seen.add(targetId);
+        depthById.set(targetId, current.depth + 1);
+        queue.push({ nodeId: targetId, depth: current.depth + 1 });
+      });
+    }
+  });
+
+  model.nodes.forEach((node, index) => {
+    if (!depthById.has(node.nodeId))
+      depthById.set(node.nodeId, index % Math.max(seedNodeIds.length, 1));
+  });
+
+  const rows = new Map<number, typeof model.nodes>();
+  model.nodes.forEach((node) => {
+    const depth = depthById.get(node.nodeId) ?? 0;
+    const bucket = rows.get(depth) ?? [];
+    bucket.push(node);
+    rows.set(depth, bucket);
+  });
+
+  const sortedDepths = Array.from(rows.keys()).sort((a, b) => a - b);
+  const maxCols = Math.max(...sortedDepths.map((depth) => rows.get(depth)?.length ?? 0), 1);
+  const positionById = new Map<string, { x: number; y: number }>();
+
+  sortedDepths.forEach((depth) => {
+    const row = [...(rows.get(depth) ?? [])].sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'item' ? -1 : 1;
+      if (a.kind === 'item' && b.kind === 'item') {
+        const byTitle = itemName(a.itemKey).localeCompare(itemName(b.itemKey));
+        if (byTitle !== 0) return byTitle;
+      }
+      if (a.kind === 'fluid' && b.kind === 'fluid') {
+        const byTitle = a.id.localeCompare(b.id);
+        if (byTitle !== 0) return byTitle;
+      }
+      return a.nodeId.localeCompare(b.nodeId);
+    });
+    const rowWidth = row.length * (nodeW + gapX) - gapX;
+    const totalWidth = maxCols * (nodeW + gapX) - gapX;
+    const offsetX = pad + Math.max(0, (totalWidth - rowWidth) / 2);
+    row.forEach((node, index) => {
+      positionById.set(node.nodeId, {
+        x: offsetX + index * (nodeW + gapX),
+        y: pad + depth * (nodeH + gapY),
+      });
+    });
+  });
+
+  const unitText = unitSuffix(graphDisplayUnit.value);
+  const nodes: Node<GraphNodeData>[] = model.nodes.map((node) => {
+    const position = positionById.get(node.nodeId) ?? { x: pad, y: pad };
+    if (node.kind === 'item') {
+      const subtitle = `${formatAmount(rateByUnitFromPerSecond(node.amountPerSecond, graphDisplayUnit.value))}${unitText}`;
+      const machineCount = formatMachineCountForDisplay(node.machineCount);
+      return {
+        id: node.nodeId,
+        type: 'graphItemNode',
+        position,
+        draggable: false,
+        selectable: false,
+        data: {
+          kind: 'item',
+          itemKey: node.itemKey,
+          title: itemName(node.itemKey),
+          subtitle,
+          ...(node.machineItemId ? { machineItemId: node.machineItemId } : {}),
+          ...(machineCount > 0 ? { machineCount } : {}),
+          cycle: false,
+          cycleSeed: false,
+        },
+      };
+    }
+
+    const subtitle = `${formatAmount(rateByUnitFromPerSecond(node.amountPerSecond, graphDisplayUnit.value))}${unitText}${node.unit ? ` ${node.unit}` : ''}`;
+    return {
+      id: node.nodeId,
+      type: 'graphFluidNode',
+      position,
+      draggable: false,
+      selectable: false,
+      data: {
+        kind: 'fluid',
+        title: node.id,
+        subtitle,
+      },
+    };
+  });
+
+  const edges: Edge[] = model.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    type: 'smoothstep',
+    markerEnd: MarkerType.ArrowClosed,
+    ...(edge.kind === 'fluid' ? { style: { stroke: '#78909c', strokeDasharray: '6 4' } } : {}),
+  }));
+
+  return { nodes, edges };
+}
+
+const lpTreeRoots = computed<LpTreeNode[]>(() => {
+  if (!(lpMode.value && lpResult.value?.lpFlow)) return [];
+
+  const model = buildLpGraphFlowModel({
+    flow: lpResult.value.lpFlow,
+    includeFluids: true,
+  });
+  if (!model.nodes.length) return [];
+
+  const incomingCount = new Map<string, number>();
+  const childrenById = new Map<string, string[]>();
+  model.nodes.forEach((node) => incomingCount.set(node.nodeId, 0));
+  model.edges.forEach((edge) => {
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+    const bucket = childrenById.get(edge.source) ?? [];
+    bucket.push(edge.target);
+    childrenById.set(edge.source, bucket);
+  });
+
+  const nodeById = new Map(model.nodes.map((node) => [node.nodeId, node] as const));
+  const materialize = (nodeId: string, path: Set<string>): LpTreeNode | null => {
+    const base = nodeById.get(nodeId);
+    if (!base) return null;
+    if (base.kind === 'fluid') {
+      return {
+        kind: 'fluid',
+        nodeId: base.nodeId,
+        id: base.id,
+        ...(base.unit ? { unit: base.unit } : {}),
+        amount: base.amountPerSecond * 60,
+      };
+    }
+
+    const nextPath = new Set(path);
+    const looped = nextPath.has(nodeId);
+    nextPath.add(nodeId);
+    const children = looped
+      ? []
+      : (childrenById.get(nodeId) ?? [])
+          .map((childId) => materialize(childId, nextPath))
+          .filter((child): child is LpTreeNode => child !== null);
+
+    return {
+      kind: 'item',
+      nodeId: base.nodeId,
+      itemKey: base.itemKey,
+      amount: base.amountPerSecond * 60,
+      children,
+      ...(base.machineItemId ? { machineItemId: base.machineItemId } : {}),
+      ...(base.machineCount !== undefined ? { machineCount: base.machineCount } : {}),
+      ...(base.power !== undefined ? { power: base.power } : {}),
+      ...(looped ? { cycle: true } : {}),
+      cycleSeed: false,
+    };
+  };
+
+  return model.nodes
+    .map((node) => node.nodeId)
+    .filter((nodeId) => (incomingCount.get(nodeId) ?? 0) === 0)
+    .sort((a, b) => a.localeCompare(b))
+    .map((nodeId) => materialize(nodeId, new Set()))
+    .filter((node): node is LpTreeNode => node !== null);
+});
+
 const graphFlow = computed(() => {
+  if (lpMode.value && lpResult.value?.lpFlow) {
+    return buildLpGraphFlowView();
+  }
   if (!mergedTree.value) return { nodes: [] as Node<GraphNodeData>[], edges: [] as Edge[] };
 
   const nodes: Node<GraphNodeData>[] = [];
@@ -3107,6 +3467,12 @@ const graphFlowEdgesStyled = computed(() => {
 const graphFlowNodes = computed(() => graphFlow.value.nodes);
 
 const lineModel = computed<ReturnType<typeof buildProductionLineModel>>(() => {
+  if (lpMode.value && lpResult.value?.lpFlow) {
+    return buildLpProductionLineModel({
+      flow: lpResult.value.lpFlow,
+      collapseIntermediateItems: lineCollapseIntermediate.value,
+    });
+  }
   if (!mergedTree.value) return { nodes: [], edges: [] };
 
   const roots =
@@ -3200,8 +3566,6 @@ const lineModel = computed<ReturnType<typeof buildProductionLineModel>>(() => {
 });
 
 const lineFlow = computed(() => {
-  if (!mergedTree.value) return { nodes: [] as Node[], edges: [] as Edge[] };
-
   const model = lineModel.value;
   if (!model.nodes.length) return { nodes: [] as Node[], edges: [] as Edge[] };
 
@@ -3916,7 +4280,148 @@ const lineFlowEdgesStyled = computed(() => {
   });
 });
 
+const lpCalcSummary = computed(() => {
+  if (!(lpMode.value && lpResult.value?.lpFlow)) return null;
+
+  const EPS = 1e-12;
+  const flow = lpResult.value.lpFlow;
+  const itemTotalsByHash = new Map<
+    string,
+    {
+      itemKey: ItemKey;
+      produced: number;
+      consumed: number;
+      external: number;
+      unproduceable: number;
+      target: number;
+      surplus: number;
+    }
+  >();
+  const machineRowsById = new Map<ItemId, { id: ItemId; name: string; count: number }>();
+
+  const ensureItemTotals = (itemKey: ItemKey) => {
+    const hash = itemKeyHash(itemKey);
+    const prev = itemTotalsByHash.get(hash);
+    if (prev) return prev;
+    const next = {
+      itemKey,
+      produced: 0,
+      consumed: 0,
+      external: 0,
+      unproduceable: 0,
+      target: 0,
+      surplus: 0,
+    };
+    itemTotalsByHash.set(hash, next);
+    return next;
+  };
+
+  flow.targets.forEach(({ key, amountPerSecond }) => {
+    ensureItemTotals(key).target += amountPerSecond;
+  });
+  flow.externalInputs.forEach(({ key, amountPerSecond }) => {
+    ensureItemTotals(key).external += amountPerSecond;
+  });
+  flow.unproduceableInputs.forEach(({ key, amountPerSecond }) => {
+    ensureItemTotals(key).unproduceable += amountPerSecond;
+  });
+  flow.surpluses.forEach(({ key, amountPerSecond }) => {
+    ensureItemTotals(key).surplus += amountPerSecond;
+  });
+
+  let power = 0;
+  let pollution = 0;
+  flow.recipes.forEach((recipe) => {
+    power += recipe.power ?? 0;
+    pollution += recipe.pollution ?? 0;
+    if (recipe.machineId) {
+      const prev = machineRowsById.get(recipe.machineId);
+      if (prev) {
+        prev.count += recipe.machineCount;
+      } else {
+        machineRowsById.set(recipe.machineId, {
+          id: recipe.machineId,
+          name: getItemName(recipe.machineId),
+          count: recipe.machineCount,
+        });
+      }
+    }
+    recipe.inputItems.forEach(({ key, amountPerSecond }) => {
+      ensureItemTotals(key).consumed += amountPerSecond;
+    });
+    recipe.outputItems.forEach(({ key, amountPerSecond }) => {
+      ensureItemTotals(key).produced += amountPerSecond;
+    });
+  });
+
+  const machineRows = Array.from(machineRowsById.values()).sort((a, b) => b.count - a.count);
+  const itemRows = Array.from(itemTotalsByHash.values())
+    .map((totals) => {
+      const amountPerSecond = Math.max(
+        Math.max(0, totals.produced - totals.surplus) + totals.external + totals.unproduceable,
+        totals.consumed,
+        totals.target,
+      );
+      return {
+        id: totals.itemKey.id,
+        name: getItemName(totals.itemKey.id),
+        rate: rateByUnitFromPerSecond(amountPerSecond, calcDisplayUnit.value),
+      };
+    })
+    .filter((row) => row.rate > EPS)
+    .sort((a, b) => b.rate - a.rate);
+
+  const intermediateRows = Array.from(itemTotalsByHash.entries())
+    .map(([hash, totals]) => {
+      const amountPerSecond = Math.min(
+        totals.consumed,
+        Math.max(0, totals.produced - totals.surplus),
+      );
+      return {
+        id: totals.itemKey.id,
+        name: getItemName(totals.itemKey.id),
+        amount: rateByUnitFromPerSecond(amountPerSecond, calcDisplayUnit.value),
+        rate: rateByUnitFromPerSecond(amountPerSecond, calcDisplayUnit.value),
+        forcedRaw: forcedRawItemKeyHashes.value.has(hash),
+        isTarget: targetRootHashes.value.has(hash),
+      };
+    })
+    .filter((row) => row.amount > EPS && !row.isTarget && !row.forcedRaw)
+    .sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name));
+
+  const forcedRawRows = Array.from(itemTotalsByHash.entries())
+    .map(([hash, totals]) => {
+      const amountPerSecond = totals.external + totals.unproduceable;
+      return {
+        keyHash: hash,
+        itemKey: totals.itemKey,
+        name: getItemName(totals.itemKey.id),
+        amount: rateByUnitFromPerSecond(amountPerSecond, calcDisplayUnit.value),
+        rate: rateByUnitFromPerSecond(amountPerSecond, calcDisplayUnit.value),
+        forcedRaw: forcedRawItemKeyHashes.value.has(hash),
+        isTarget: targetRootHashes.value.has(hash),
+      };
+    })
+    .filter((row) => row.amount > EPS && row.forcedRaw && !row.isTarget)
+    .sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name));
+
+  return {
+    power,
+    pollution,
+    machineRows,
+    itemRows,
+    intermediateRows,
+    forcedRawRows,
+  };
+});
+
 const quantModel = computed<ReturnType<typeof buildQuantFlowModel>>(() => {
+  if (lpMode.value && lpResult.value?.lpFlow) {
+    return buildLpQuantFlowModel({
+      flow: lpResult.value.lpFlow,
+      includeFluids: quantShowFluids.value,
+    });
+  }
   if (!mergedTree.value) return { nodes: [], edges: [] };
 
   const roots =
@@ -3983,8 +4488,13 @@ const quantModel = computed<ReturnType<typeof buildQuantFlowModel>>(() => {
 });
 
 const calcTotals = computed(() => mergedTree.value?.totals ?? null);
+const calcPower = computed(() => lpCalcSummary.value?.power ?? calcTotals.value?.power ?? 0);
+const calcPollution = computed(
+  () => lpCalcSummary.value?.pollution ?? calcTotals.value?.pollution ?? 0,
+);
 
 const calcMachineRows = computed(() => {
+  if (lpCalcSummary.value) return lpCalcSummary.value.machineRows;
   if (!calcTotals.value) return [] as Array<{ id: ItemId; name: string; count: number }>;
   return Array.from(calcTotals.value.machines.entries())
     .map(([id, count]) => ({ id, name: getItemName(id), count }))
@@ -3992,6 +4502,7 @@ const calcMachineRows = computed(() => {
 });
 
 const calcItemRows = computed(() => {
+  if (lpCalcSummary.value) return lpCalcSummary.value.itemRows;
   if (!calcTotals.value) return [] as Array<{ id: ItemId; name: string; rate: number }>;
   return Array.from(calcTotals.value.perSecond.entries())
     .map(([id, perSecond]) => ({
@@ -4003,6 +4514,7 @@ const calcItemRows = computed(() => {
 });
 
 const calcIntermediateRows = computed(() => {
+  if (lpCalcSummary.value) return lpCalcSummary.value.intermediateRows;
   if (!mergedTree.value) {
     return [] as Array<{
       id: ItemId;
@@ -4049,6 +4561,7 @@ const calcIntermediateRows = computed(() => {
 });
 
 const calcForcedRawRows = computed(() => {
+  if (lpCalcSummary.value) return lpCalcSummary.value.forcedRawRows;
   if (!mergedTree.value) {
     return [] as Array<{
       keyHash: string;
@@ -4099,13 +4612,56 @@ const calcMachineTotal = computed(() => {
 });
 
 // ─── LP raw data table ─────────────────────────────────────────────────────
+const lpTargetHashes = computed(
+  () => new Set(targets.value.map((target) => itemKeyHash(target.itemKey))),
+);
+
+function formatLpRecipeItemSummary(
+  label: string,
+  items: Array<{ key: ItemKey; amountPerSecond: number }>,
+): string | null {
+  if (!items.length) return null;
+  return `${label}：${items
+    .map((item) => `${getItemName(item.key.id)} ${item.amountPerSecond.toFixed(4)}/s`)
+    .join('，')}`;
+}
+
 const lpRawRows = computed(() => {
   if (!lpResult.value) return [];
+  if (lpResult.value.lpFlow) {
+    return lpResult.value.lpFlow.recipes.map((recipe) => {
+      const primaryOutput =
+        recipe.outputItems.find((output) => lpTargetHashes.value.has(itemKeyHash(output.key))) ??
+        recipe.outputItems[0];
+      const recipeDef = props.index?.recipesById.get(recipe.recipeId);
+      const recipeType = recipeDef ? props.index?.recipeTypesByKey.get(recipeDef.type) : undefined;
+      const recipeLabel = recipeType?.displayName ?? recipe.recipeTypeKey ?? recipe.recipeId;
+
+      return {
+        id: recipe.recipeId,
+        name: primaryOutput ? getItemName(primaryOutput.key.id) : recipeLabel,
+        itemId: primaryOutput?.key.id,
+        recipeId: recipe.recipeId,
+        recipeLabel,
+        inputSummary: formatLpRecipeItemSummary('输入', recipe.inputItems),
+        outputSummary: formatLpRecipeItemSummary('输出', recipe.outputItems),
+        perSecond: primaryOutput?.amountPerSecond ?? recipe.ratePerSecond,
+        perMinute: (primaryOutput?.amountPerSecond ?? recipe.ratePerSecond) * 60,
+        machines: recipe.machineCount ?? 0,
+        power: recipe.power ?? 0,
+        surplus: 0,
+      };
+    });
+  }
+
   return lpResult.value.steps.map((step) => ({
     id: step.id,
     name: (getItemName(step.itemId ?? '') || step.recipeId) ?? step.id,
     itemId: step.itemId,
     recipeId: step.recipeId,
+    recipeLabel: step.recipeId,
+    inputSummary: null,
+    outputSummary: null,
     perSecond: step.perSecond?.toNumber() ?? 0,
     perMinute: step.perMinute?.toNumber() ?? 0,
     machines: step.machines?.toNumber() ?? 0,

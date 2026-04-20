@@ -1,18 +1,38 @@
 # About
 
 ## Build
-- Version: pages-build-5-g5b64e25-dirty
-- Commit: 5b64e25 (5b64e257864c4f6b122e8a171d92226c110c7c6c)
-- Commit count: 163
-- Subject: feat: 添加基于域名的UI策略和移动端适配
+- Version: pages-build-8-g0766d0c-dirty
+- Commit: 0766d0c (0766d0c6ca3c497409c376233e8cc75494593644)
+- Commit count: 166
+- Subject: feat: 添加Warfarin Wiki的备用镜像链接
 - Author: AndreaFrederica
-- Date: 2026-04-07T20:22:18+08:00
-- Generated at: 2026-04-07T18:44:42.554Z
+- Date: 2026-04-18T01:10:33+08:00
+- Generated at: 2026-04-20T17:55:41.818Z
 - Remote: https://github.com/AndreaFrederica/jei-web.git
 
 ## Version History
 
-### Unreleased (2026-04-07T20:22:18+08:00)
+### Unreleased (2026-04-18T01:10:33+08:00)
+- 0766d0c 2026-04-18T01:10:33+08:00
+  feat: 添加Warfarin Wiki的备用镜像链接
+- 5b47dff 2026-04-08T04:10:11+08:00
+  fix(ui): 优化移动端布局并修复标签页溢出问题
+  
+  - 为移动端隐藏键盘快捷键提示，避免标签文字过长
+  - 动态设置标签页箭头显示，改善移动端导航体验
+  - 添加 CSS 类限制容器最小宽度，防止内容溢出
+  - 在 CraftingPlannerView 中适配移动端布局，调整工具栏响应式设计
+- 77b407c 2026-04-08T03:35:36+08:00
+  feat: 新增配方数据源追踪和移动端界面优化
+  
+  - 在配方类型中增加 sourcePackIds 字段以追踪数据来源
+  - 为物品查询添加 aggregateHoverSources 支持，增强跨数据包匹配
+  - 新增配方查询数据源显示开关，可在设置中控制是否显示配方来源标签
+  - 优化移动端底部数据源栏，支持折叠功能并改进布局适配
+  - 重构 Wiki 组件，支持基于数据源的物品解析和导航
+  - 新增构建信息对话框，集中展示版本和构建详情
+  - 改进 Warfarin 配方渲染器，优化配方表格布局和显示效果
+  - 更新多语言翻译，添加相关设置项和界面文本
 - 5b64e25 2026-04-07T20:22:18+08:00
   feat: 添加基于域名的UI策略和移动端适配
   

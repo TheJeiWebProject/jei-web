@@ -328,6 +328,11 @@ export default {
   useProductRecovery: '使用产物回收',
   lpMode: 'LP优化模式',
   lpModeTooltip: '启用后使用线性规划求解器自动优化配方组合。',
+  integerMachineMode: '整数机器数',
+  integerMachineModeTooltip: '启用后按整数机器台数求解，避免连续 LP 产生 0.23 台这类小数机器。',
+  discreteMachineRateMode: '允许降速机器',
+  discreteMachineRateModeTooltip:
+    '整数机器模式下，允许单台机器以 1/2、1/4 等离散速率运行，减少为凑满整速而额外增加整机。',
   autoRecipePlusLP: '自动配方 + LP',
   autoRecipePlusLPTooltip: '自动选择最优配方，然后用 LP 求解',
   lpRawData: 'LP 原始数据',
