@@ -1073,6 +1073,7 @@ const loadSavedPlan = (payload: PlannerSavePayload) => {
   emitLiveState();
 
   allDecisions.value = [];
+  lpResult.value = null;
   mergedTree.value = null;
   mergedRootItemKey.value = null;
   collapsed.value = new Set();
@@ -1083,6 +1084,7 @@ const loadSavedPlan = (payload: PlannerSavePayload) => {
   }
 
   planningStarted.value = true;
+  lpPendingAfterDecisions.value = lpMode.value;
   recomputePlanningState();
 };
 
